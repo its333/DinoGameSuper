@@ -1,36 +1,55 @@
 // Function Fix for "requestAnimationFrame" 12.06.17
-(function() {
-var lastTime = 0;
-var vendors = ['ms', 'moz', 'webkit', 'o'];
-for(var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
-window.requestAnimationFrame = window[vendors[x]+'RequestAnimationFrame'];
-window.cancelAnimationFrame = window[vendors[x]+'CancelAnimationFrame'] 
-|| window[vendors[x]+'CancelRequestAnimationFrame'];
-}
-if (!window.requestAnimationFrame)
-window.requestAnimationFrame = function(callback, element) {
-var currTime = new Date().getTime();
-var timeToCall = Math.max(0, 16 - (currTime - lastTime));
-var id = window.setTimeout(function() { callback(currTime + timeToCall); }, 
-timeToCall);
-lastTime = currTime + timeToCall;
-return id;
-};
-if (!window.cancelAnimationFrame)
-window.cancelAnimationFrame = function(id) {
-clearTimeout(id);
-};
+(function () {
+    var lastTime = 0;
+    var vendors = ['ms', 'moz', 'webkit', 'o'];
+    for (var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
+        window.requestAnimationFrame = window[vendors[x] + 'RequestAnimationFrame'];
+        window.cancelAnimationFrame = window[vendors[x] + 'CancelAnimationFrame']
+            || window[vendors[x] + 'CancelRequestAnimationFrame'];
+    }
+    if (!window.requestAnimationFrame)
+        window.requestAnimationFrame = function (callback, element) {
+            var currTime = new Date().getTime();
+            var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+            var id = window.setTimeout(function () { callback(currTime + timeToCall); },
+                timeToCall);
+            lastTime = currTime + timeToCall;
+            return id;
+        };
+    if (!window.cancelAnimationFrame)
+        window.cancelAnimationFrame = function (id) {
+            clearTimeout(id);
+        };
 }());
 
-(function() {
+(function () {
     'use strict';
 
     var currentScore = 0;
 
     // Fix for AudioContext 12.06.17
-	var AudioContext = window.AudioContext // Default
-	    || window.webkitAudioContext // Safari and old versions of Chrome
-	    || false;
+    var AudioContext = window.AudioContext // Default
+        || window.webkitAudioContext // Safari and old versions of Chrome
+        || false;
+
+    function SeededRNG(seed) {
+        this.seed = seed || Date.now();
+    }
+    SeededRNG.prototype = {
+        next: function () {
+            var t = this.seed += 0x6D2B79F5;
+            t = Math.imul(t ^ t >>> 15, t | 1);
+            t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+            return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        },
+        nextFloat: function () {
+            return this.next();
+        },
+        nextInt: function (min, max) {
+            return Math.floor(this.next() * (max - min + 1)) + min;
+        }
+    };
+
     function Runner(outerContainerId, opt_config) {
         opt_config = opt_config || {};
         this.id = opt_config.id || ('runner-' + Math.random().toString(36).substr(2, 6));
@@ -43,6 +62,7 @@ clearTimeout(id);
         this.containerEl = null;
         this.snackbarEl = null;
         this.config = Object.assign({}, Runner.config, opt_config.config || {});
+        this.rng = new SeededRNG(opt_config.rngSeed);
         this.dimensions = {
             WIDTH: Runner.defaultDimensions.WIDTH,
             HEIGHT: (opt_config.dimensions && opt_config.dimensions.HEIGHT) ? opt_config.dimensions.HEIGHT : Runner.defaultDimensions.HEIGHT
@@ -225,22 +245,22 @@ clearTimeout(id);
         GAMEPADCONNECTED: 'gamepadconnected'
     };
     Runner.prototype = {
-        isDisabled: function() {
+        isDisabled: function () {
             return loadTimeData && loadTimeData.valueExists('disabledEasterEgg')
         },
-        setupDisabledRunner: function() {
+        setupDisabledRunner: function () {
             this.containerEl = document.createElement('div');
             this.containerEl.className = Runner.classes.SNACKBAR;
             this.containerEl.textContent = loadTimeData.getValue('disabledEasterEgg');
             this.outerContainerEl.appendChild(this.containerEl);
-            document.addEventListener(Runner.events.KEYDOWN, function(e) {
+            document.addEventListener(Runner.events.KEYDOWN, function (e) {
                 if (Runner.keycodes.JUMP[e.keyCode]) {
                     this.containerEl.classList.add(Runner.classes.SNACKBAR_SHOW);
                     document.querySelector('.icon').classList.add('icon-disabled')
                 }
             }.bind(this))
         },
-        updateConfigSetting: function(setting, value) {
+        updateConfigSetting: function (setting, value) {
             if (setting in this.config && value != undefined) {
                 this.config[setting] = value;
                 switch (setting) {
@@ -258,7 +278,7 @@ clearTimeout(id);
                 }
             }
         },
-        loadImages: function() {
+        loadImages: function () {
             if (IS_HIDPI) {
                 Runner.imageSprite = document.getElementById('offline-resources-2x');
                 this.spriteDef = Runner.spriteDefinition.HDPI
@@ -268,7 +288,7 @@ clearTimeout(id);
             }
             this.init()
         },
-        loadSounds: function() {
+        loadSounds: function () {
             if (!IS_IOS && AudioContext) { // Fix 12.06.17
                 this.audioContext = new AudioContext();
                 var resourceTemplate = document.getElementById(this.config.RESOURCE_TEMPLATE_ID).content;
@@ -276,13 +296,13 @@ clearTimeout(id);
                     var soundSrc = resourceTemplate.getElementById(Runner.sounds[sound]).src;
                     soundSrc = soundSrc.substr(soundSrc.indexOf(',') + 1);
                     var buffer = decodeBase64ToArrayBuffer(soundSrc);
-                    this.audioContext.decodeAudioData(buffer, function(index, audioData) {
+                    this.audioContext.decodeAudioData(buffer, function (index, audioData) {
                         this.soundFx[index] = audioData
                     }.bind(this, sound))
                 }
             }
         },
-        setSpeed: function(opt_speed) {
+        setSpeed: function (opt_speed) {
             var speed = opt_speed || this.currentSpeed;
             if (this.dimensions.WIDTH < DEFAULT_WIDTH) {
                 var mobileSpeed = speed * this.dimensions.WIDTH / DEFAULT_WIDTH * this.config.MOBILE_SPEED_COEFFICIENT;
@@ -291,7 +311,7 @@ clearTimeout(id);
                 this.currentSpeed = opt_speed
             }
         },
-        init: function() {
+        init: function () {
             this.adjustDimensions();
             this.setSpeed();
             this.containerEl = document.createElement('div');
@@ -301,7 +321,7 @@ clearTimeout(id);
             this.canvasCtx.fillStyle = '#f7f7f7';
             this.canvasCtx.fill();
             Runner.updateCanvasScaling(this.canvas);
-            this.horizon = new Horizon(this.canvas, this.spriteDef, this.dimensions, this.config.GAP_COEFFICIENT);
+            this.horizon = new Horizon(this.canvas, this.spriteDef, this.dimensions, this.config.GAP_COEFFICIENT, this.rng);
             this.distanceMeter = new DistanceMeter(this.canvas, this.spriteDef.TEXT_SPRITE, this.dimensions.WIDTH);
             this.tRex = new Trex(this.canvas, this.spriteDef.TREX);
             this.outerContainerEl.appendChild(this.containerEl);
@@ -312,16 +332,16 @@ clearTimeout(id);
             this.update();
             window.addEventListener(Runner.events.RESIZE, this.debounceResize.bind(this))
         },
-        createTouchController: function() {
+        createTouchController: function () {
             this.touchController = document.createElement('div');
             this.touchController.className = Runner.classes.TOUCH_CONTROLLER
         },
-        debounceResize: function() {
+        debounceResize: function () {
             if (!this.resizeTimerId_) {
                 this.resizeTimerId_ = setInterval(this.adjustDimensions.bind(this), 250)
             }
         },
-        adjustDimensions: function() {
+        adjustDimensions: function () {
             if (!this.outerContainerEl) {
                 return;
             }
@@ -352,7 +372,7 @@ clearTimeout(id);
                 }
             }
         },
-        playIntro: function() {
+        playIntro: function () {
             if (!this.started && !this.crashed) {
                 this.playingIntro = true;
                 this.tRex.playingIntro = true;
@@ -372,7 +392,7 @@ clearTimeout(id);
                 this.restart()
             }
         },
-        startGame: function() {
+        startGame: function () {
             this.runningTime = 0;
             this.playingIntro = false;
             this.tRex.playingIntro = false;
@@ -387,10 +407,10 @@ clearTimeout(id);
             window.addEventListener(Runner.events.BLUR, this.boundWindowBlurHandler);
             window.addEventListener(Runner.events.FOCUS, this.boundWindowFocusHandler)
         },
-        clearCanvas: function() {
+        clearCanvas: function () {
             this.canvasCtx.clearRect(0, 0, this.dimensions.WIDTH, this.dimensions.HEIGHT)
         },
-        update: function() {
+        update: function () {
             var sb = document.getElementById("shareBlock");
             if (sb) {
                 sb.style.display = 'none';
@@ -440,8 +460,8 @@ clearTimeout(id);
                 this.raq()
             }
         },
-        handleEvent: function(e) {
-            return (function(evtType, events) {
+        handleEvent: function (e) {
+            return (function (evtType, events) {
                 switch (evtType) {
                     case events.KEYDOWN:
                     case events.TOUCHSTART:
@@ -457,7 +477,7 @@ clearTimeout(id);
                 }
             }.bind(this))(e.type, Runner.events)
         },
-        startListening: function() {
+        startListening: function () {
             document.addEventListener(Runner.events.KEYDOWN, this);
             document.addEventListener(Runner.events.KEYUP, this);
             if (IS_MOBILE) {
@@ -471,14 +491,14 @@ clearTimeout(id);
             window.addEventListener(Runner.events.GAMEPADCONNECTED, this);
             this.gamepadPollId = window.setInterval(this.pollGamepads.bind(this), 10)
         },
-        pollGamepads: function() {
+        pollGamepads: function () {
             var gamepads = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads() : []); //  Fix for navigator.getGamepads() 12.06.17
             var keydown = false;
             for (var i = 0; i < gamepads.length; i++) {
                 if (gamepads[i] != undefined) {
-                    if (gamepads[i].buttons.filter(function(e) {
-                            return e.pressed == true
-                        }).length > 0) {
+                    if (gamepads[i].buttons.filter(function (e) {
+                        return e.pressed == true
+                    }).length > 0) {
                         keydown = true
                     }
                 }
@@ -495,7 +515,7 @@ clearTimeout(id);
                 document.dispatchEvent(event)
             }
         },
-        stopListening: function() {
+        stopListening: function () {
             document.removeEventListener(Runner.events.KEYDOWN, this);
             document.removeEventListener(Runner.events.KEYUP, this);
             if (IS_MOBILE) {
@@ -511,7 +531,7 @@ clearTimeout(id);
                 this.gamepadPollId = null;
             }
         },
-        onKeyDown: function(e) {
+        onKeyDown: function (e) {
             var keyCode = String(e.keyCode);
             if (IS_MOBILE) {
                 e.preventDefault()
@@ -539,7 +559,7 @@ clearTimeout(id);
                 }
             }
         },
-        onKeyUp: function(e) {
+        onKeyUp: function (e) {
             var keyCode = String(e.keyCode);
             var restartKeys = this.controlMap.RESTART || Runner.keycodes.RESTART;
             var isjumpKey = this.controlMap.JUMP[keyCode] || e.type == Runner.events.TOUCHEND || e.type == Runner.events.MOUSEDOWN;
@@ -558,19 +578,19 @@ clearTimeout(id);
                 this.play()
             }
         },
-        isLeftClickOnCanvas: function(e) {
+        isLeftClickOnCanvas: function (e) {
             return e.button != null && e.button < 2 && e.type == Runner.events.MOUSEUP && e.target == this.canvas
         },
-        raq: function() {
+        raq: function () {
             if (!this.drawPending) {
                 this.drawPending = true;
                 this.raqId = requestAnimationFrame(this.update.bind(this))
             }
         },
-        isRunning: function() {
+        isRunning: function () {
             return !!this.raqId
         },
-        gameOver: function() {
+        gameOver: function () {
             this.playSound(this.soundFx.HIT);
             vibrate(200);
             this.stop();
@@ -603,13 +623,13 @@ clearTimeout(id);
                 this.onCrash(this);
             }
         },
-        stop: function() {
+        stop: function () {
             this.activated = false;
             this.paused = true;
             cancelAnimationFrame(this.raqId);
             this.raqId = 0
         },
-        play: function() {
+        play: function () {
             if (!this.crashed) {
                 this.activated = true;
                 this.paused = false;
@@ -618,7 +638,7 @@ clearTimeout(id);
                 this.update()
             }
         },
-        restart: function() {
+        restart: function () {
             if (!this.raqId) {
                 this.playCount++;
                 this.runningTime = 0;
@@ -637,7 +657,7 @@ clearTimeout(id);
                 this.update()
             }
         },
-        onVisibilityChange: function(e) {
+        onVisibilityChange: function (e) {
             if (document.hidden || document.webkitHidden || e.type == 'blur') {
                 this.stop()
             } else if (!this.crashed) {
@@ -645,7 +665,7 @@ clearTimeout(id);
                 this.play()
             }
         },
-        playSound: function(soundBuffer) {
+        playSound: function (soundBuffer) {
             if (soundBuffer) {
                 var sourceNode = this.audioContext.createBufferSource();
                 sourceNode.buffer = soundBuffer;
@@ -653,7 +673,7 @@ clearTimeout(id);
                 sourceNode.start(0)
             }
         },
-        destroy: function() {
+        destroy: function () {
             this.stop();
             this.stopListening();
             if (this.boundVisibilityHandler) {
@@ -674,7 +694,7 @@ clearTimeout(id);
             this.destroyed = true;
         }
     };
-    Runner.updateCanvasScaling = function(canvas, opt_width, opt_height) {
+    Runner.updateCanvasScaling = function (canvas, opt_width, opt_height) {
         var context = canvas.getContext('2d');
         var devicePixelRatio = Math.floor(window.devicePixelRatio) || 1;
         var backingStoreRatio = Math.floor(context.webkitBackingStorePixelRatio) || 1;
@@ -747,13 +767,13 @@ clearTimeout(id);
         RESTART_HEIGHT: 32
     };
     GameOverPanel.prototype = {
-        updateDimensions: function(width, opt_height) {
+        updateDimensions: function (width, opt_height) {
             this.canvasDimensions.WIDTH = width;
             if (opt_height) {
                 this.canvasDimensions.HEIGHT = opt_height
             }
         },
-        draw: function() {
+        draw: function () {
             var dimensions = GameOverPanel.dimensions;
             var centerX = this.canvasDimensions.WIDTH / 2;
             var textSourceX = dimensions.TEXT_X;
@@ -842,12 +862,13 @@ clearTimeout(id);
         this.height = h
     };
 
-    function Obstacle(canvasCtx, type, spriteImgPos, dimensions, gapCoefficient, speed) {
+    function Obstacle(canvasCtx, type, spriteImgPos, dimensions, gapCoefficient, speed, rng) {
         this.canvasCtx = canvasCtx;
         this.spritePos = spriteImgPos;
         this.typeConfig = type;
         this.gapCoefficient = gapCoefficient;
-        this.size = getRandomNum(1, Obstacle.MAX_OBSTACLE_LENGTH);
+        this.rng = rng;
+        this.size = this.rng.nextInt(1, Obstacle.MAX_OBSTACLE_LENGTH);
         this.dimensions = dimensions;
         this.remove = false;
         this.xPos = 0;
@@ -862,7 +883,7 @@ clearTimeout(id);
     };
     Obstacle.MAX_GAP_COEFFICIENT = 1.5;
     Obstacle.MAX_OBSTACLE_LENGTH = 3, Obstacle.prototype = {
-        init: function(speed) {
+        init: function (speed) {
             this.cloneCollisionBoxes();
             if (this.size > 1 && this.typeConfig.multipleSpeed > speed) {
                 this.size = 1
@@ -871,7 +892,7 @@ clearTimeout(id);
             this.xPos = this.dimensions.WIDTH - this.width;
             if (Array.isArray(this.typeConfig.yPos)) {
                 var yPosConfig = IS_MOBILE ? this.typeConfig.yPosMobile : this.typeConfig.yPos;
-                this.yPos = yPosConfig[getRandomNum(0, yPosConfig.length - 1)]
+                this.yPos = yPosConfig[this.rng.nextInt(0, yPosConfig.length - 1)]
             } else {
                 this.yPos = this.typeConfig.yPos
             }
@@ -881,11 +902,11 @@ clearTimeout(id);
                 this.collisionBoxes[2].x = this.width - this.collisionBoxes[2].width
             }
             if (this.typeConfig.speedOffset) {
-                this.speedOffset = Math.random() > 0.5 ? this.typeConfig.speedOffset : -this.typeConfig.speedOffset
+                this.speedOffset = this.rng.nextFloat() > 0.5 ? this.typeConfig.speedOffset : -this.typeConfig.speedOffset
             }
             this.gap = this.getGap(this.gapCoefficient, speed)
         },
-        draw: function() {
+        draw: function () {
             var sourceWidth = this.typeConfig.width;
             var sourceHeight = this.typeConfig.height;
             if (IS_HIDPI) {
@@ -898,7 +919,7 @@ clearTimeout(id);
             }
             this.canvasCtx.drawImage(Runner.imageSprite, sourceX, this.spritePos.y, sourceWidth * this.size, sourceHeight, this.xPos, this.yPos, this.typeConfig.width * this.size, this.typeConfig.height)
         },
-        update: function(deltaTime, speed) {
+        update: function (deltaTime, speed) {
             if (!this.remove) {
                 if (this.typeConfig.speedOffset) {
                     speed += this.speedOffset
@@ -917,15 +938,15 @@ clearTimeout(id);
                 }
             }
         },
-        getGap: function(gapCoefficient, speed) {
+        getGap: function (gapCoefficient, speed) {
             var minGap = Math.round(this.width * speed + this.typeConfig.minGap * gapCoefficient);
             var maxGap = Math.round(minGap * Obstacle.MAX_GAP_COEFFICIENT);
-            return getRandomNum(minGap, maxGap)
+            return this.rng.nextInt(minGap, maxGap)
         },
-        isVisible: function() {
+        isVisible: function () {
             return this.xPos + this.width > 0
         },
-        cloneCollisionBoxes: function() {
+        cloneCollisionBoxes: function () {
             var collisionBoxes = this.typeConfig.collisionBoxes;
             for (var i = collisionBoxes.length - 1; i >= 0; i--) {
                 this.collisionBoxes[i] = new CollisionBox(collisionBoxes[i].x, collisionBoxes[i].y, collisionBoxes[i].width, collisionBoxes[i].height)
@@ -1039,7 +1060,7 @@ clearTimeout(id);
         }
     };
     Trex.prototype = {
-        init: function() {
+        init: function () {
             this.blinkDelay = this.setBlinkDelay();
             this.groundYPos = Runner.defaultDimensions.HEIGHT - this.config.HEIGHT - Runner.config.BOTTOM_PAD;
             this.yPos = this.groundYPos;
@@ -1047,11 +1068,11 @@ clearTimeout(id);
             this.draw(0, 0);
             this.update(0, Trex.status.WAITING)
         },
-        setJumpVelocity: function(setting) {
+        setJumpVelocity: function (setting) {
             this.config.INIITAL_JUMP_VELOCITY = -setting;
             this.config.DROP_VELOCITY = -setting / 2
         },
-        update: function(deltaTime, opt_status) {
+        update: function (deltaTime, opt_status) {
             this.timer += deltaTime;
             if (opt_status) {
                 this.status = opt_status;
@@ -1080,7 +1101,7 @@ clearTimeout(id);
                 this.setDuck(true)
             }
         },
-        draw: function(x, y) {
+        draw: function (x, y) {
             var sourceX = x;
             var sourceY = y;
             var sourceWidth = this.ducking && this.status != Trex.status.CRASHED ? this.config.WIDTH_DUCK : this.config.WIDTH;
@@ -1102,10 +1123,10 @@ clearTimeout(id);
                 this.canvasCtx.drawImage(Runner.imageSprite, sourceX, sourceY, sourceWidth, sourceHeight, this.xPos, this.yPos, this.config.WIDTH, this.config.HEIGHT)
             }
         },
-        setBlinkDelay: function() {
+        setBlinkDelay: function () {
             this.blinkDelay = Math.ceil(Math.random() * Trex.BLINK_TIMING)
         },
-        blink: function(time) {
+        blink: function (time) {
             var deltaTime = time - this.animStartTime;
             if (deltaTime >= this.blinkDelay) {
                 this.draw(this.currentAnimFrames[this.currentFrame], 0);
@@ -1115,7 +1136,7 @@ clearTimeout(id);
                 }
             }
         },
-        startJump: function(speed) {
+        startJump: function (speed) {
             if (!this.jumping) {
                 this.update(0, Trex.status.JUMPING);
                 this.jumpVelocity = this.config.INIITAL_JUMP_VELOCITY - (speed / 10);
@@ -1124,12 +1145,12 @@ clearTimeout(id);
                 this.speedDrop = false
             }
         },
-        endJump: function() {
+        endJump: function () {
             if (this.reachedMinHeight && this.jumpVelocity < this.config.DROP_VELOCITY) {
                 this.jumpVelocity = this.config.DROP_VELOCITY
             }
         },
-        updateJump: function(deltaTime, speed) {
+        updateJump: function (deltaTime, speed) {
             var msPerFrame = Trex.animFrames[this.status].msPerFrame;
             var framesElapsed = deltaTime / msPerFrame;
             if (this.speedDrop) {
@@ -1150,11 +1171,11 @@ clearTimeout(id);
             }
             this.update(deltaTime)
         },
-        setSpeedDrop: function() {
+        setSpeedDrop: function () {
             this.speedDrop = true;
             this.jumpVelocity = 1
         },
-        setDuck: function(isDucking) {
+        setDuck: function (isDucking) {
             if (isDucking && this.status != Trex.status.DUCKING) {
                 this.update(0, Trex.status.DUCKING);
                 this.ducking = true
@@ -1163,7 +1184,7 @@ clearTimeout(id);
                 this.ducking = false
             }
         },
-        reset: function() {
+        reset: function () {
             this.yPos = this.groundYPos;
             this.jumpVelocity = 0;
             this.jumping = false;
@@ -1209,7 +1230,7 @@ clearTimeout(id);
         FLASH_ITERATIONS: 3
     };
     DistanceMeter.prototype = {
-        init: function(width) {
+        init: function (width) {
             var maxDistanceStr = '';
             this.calcXPos(width);
             this.maxScore = this.maxScoreUnits;
@@ -1220,10 +1241,10 @@ clearTimeout(id);
             }
             this.maxScore = parseInt(maxDistanceStr)
         },
-        calcXPos: function(canvasWidth) {
+        calcXPos: function (canvasWidth) {
             this.x = canvasWidth - (DistanceMeter.dimensions.DEST_WIDTH * (this.maxScoreUnits + 1))
         },
-        draw: function(digitPos, value, opt_highScore) {
+        draw: function (digitPos, value, opt_highScore) {
             var sourceWidth = DistanceMeter.dimensions.WIDTH;
             var sourceHeight = DistanceMeter.dimensions.HEIGHT;
             var sourceX = DistanceMeter.dimensions.WIDTH * value;
@@ -1249,10 +1270,10 @@ clearTimeout(id);
             this.canvasCtx.drawImage(this.image, sourceX, sourceY, sourceWidth, sourceHeight, targetX, targetY, targetWidth, targetHeight);
             this.canvasCtx.restore()
         },
-        getActualDistance: function(distance) {
+        getActualDistance: function (distance) {
             return distance ? Math.round(distance * this.config.COEFFICIENT) : 0
         },
-        update: function(deltaTime, distance) {
+        update: function (deltaTime, distance) {
             var paint = true;
             var playSound = false;
             if (!this.acheivement) {
@@ -1297,7 +1318,7 @@ clearTimeout(id);
             this.drawHighScore();
             return playSound
         },
-        drawHighScore: function() {
+        drawHighScore: function () {
             this.canvasCtx.save();
             this.canvasCtx.globalAlpha = .8;
             for (var i = this.highScore.length - 1; i >= 0; i--) {
@@ -1305,18 +1326,18 @@ clearTimeout(id);
             }
             this.canvasCtx.restore()
         },
-        setHighScore: function(distance) {
+        setHighScore: function (distance) {
             distance = this.getActualDistance(distance);
             var highScoreStr = (this.defaultString + distance).substr(-this.maxScoreUnits);
             this.highScore = ['10', '11', ''].concat(highScoreStr.split(''))
         },
-        reset: function() {
+        reset: function () {
             this.update(0);
             this.acheivement = false
         }
     };
 
-    function Cloud(canvas, spritePos, containerWidth) {
+    function Cloud(canvas, spritePos, containerWidth, rng) {
         this.canvas = canvas;
         this.canvasCtx = this.canvas.getContext('2d');
         this.spritePos = spritePos;
@@ -1324,7 +1345,8 @@ clearTimeout(id);
         this.xPos = containerWidth;
         this.yPos = 0;
         this.remove = false;
-        this.cloudGap = getRandomNum(Cloud.config.MIN_CLOUD_GAP, Cloud.config.MAX_CLOUD_GAP);
+        this.rng = rng;
+        this.cloudGap = this.rng.nextInt(Cloud.config.MIN_CLOUD_GAP, Cloud.config.MAX_CLOUD_GAP);
         this.init()
     };
     Cloud.config = {
@@ -1336,11 +1358,11 @@ clearTimeout(id);
         WIDTH: 46
     };
     Cloud.prototype = {
-        init: function() {
-            this.yPos = getRandomNum(Cloud.config.MAX_SKY_LEVEL, Cloud.config.MIN_SKY_LEVEL);
+        init: function () {
+            this.yPos = this.rng.nextInt(Cloud.config.MAX_SKY_LEVEL, Cloud.config.MIN_SKY_LEVEL);
             this.draw()
         },
-        draw: function() {
+        draw: function () {
             this.canvasCtx.save();
             var sourceWidth = Cloud.config.WIDTH;
             var sourceHeight = Cloud.config.HEIGHT;
@@ -1351,7 +1373,7 @@ clearTimeout(id);
             this.canvasCtx.drawImage(Runner.imageSprite, this.spritePos.x, this.spritePos.y, sourceWidth, sourceHeight, this.xPos, this.yPos, Cloud.config.WIDTH, Cloud.config.HEIGHT);
             this.canvasCtx.restore()
         },
-        update: function(speed) {
+        update: function (speed) {
             if (!this.remove) {
                 this.xPos -= Math.ceil(speed);
                 this.draw();
@@ -1360,15 +1382,16 @@ clearTimeout(id);
                 }
             }
         },
-        isVisible: function() {
+        isVisible: function () {
             return this.xPos + Cloud.config.WIDTH > 0
         }
     };
 
-    function HorizonLine(canvas, spritePos) {
+    function HorizonLine(canvas, spritePos, rng) {
         this.spritePos = spritePos;
         this.canvas = canvas;
         this.canvasCtx = canvas.getContext('2d');
+        this.rng = rng;
         this.sourceDimensions = {};
         this.dimensions = HorizonLine.dimensions;
         this.sourceXPos = [this.spritePos.x, this.spritePos.x + this.dimensions.WIDTH];
@@ -1384,7 +1407,7 @@ clearTimeout(id);
         YPOS: 127
     };
     HorizonLine.prototype = {
-        setSourceDimensions: function() {
+        setSourceDimensions: function () {
             for (var dimension in HorizonLine.dimensions) {
                 if (IS_HIDPI) {
                     if (dimension != 'YPOS') {
@@ -1398,14 +1421,14 @@ clearTimeout(id);
             this.xPos = [0, HorizonLine.dimensions.WIDTH];
             this.yPos = HorizonLine.dimensions.YPOS
         },
-        getRandomType: function() {
-            return Math.random() > this.bumpThreshold ? this.dimensions.WIDTH : 0
+        getRandomType: function () {
+            return this.rng.nextFloat() > this.bumpThreshold ? this.dimensions.WIDTH : 0
         },
-        draw: function() {
+        draw: function () {
             this.canvasCtx.drawImage(Runner.imageSprite, this.sourceXPos[0], this.spritePos.y, this.sourceDimensions.WIDTH, this.sourceDimensions.HEIGHT, this.xPos[0], this.yPos, this.dimensions.WIDTH, this.dimensions.HEIGHT);
             this.canvasCtx.drawImage(Runner.imageSprite, this.sourceXPos[1], this.spritePos.y, this.sourceDimensions.WIDTH, this.sourceDimensions.HEIGHT, this.xPos[1], this.yPos, this.dimensions.WIDTH, this.dimensions.HEIGHT)
         },
-        updateXPos: function(pos, increment) {
+        updateXPos: function (pos, increment) {
             var line1 = pos;
             var line2 = pos == 0 ? 1 : 0;
             this.xPos[line1] -= increment;
@@ -1416,7 +1439,7 @@ clearTimeout(id);
                 this.sourceXPos[line1] = this.getRandomType() + this.spritePos.x
             }
         },
-        update: function(deltaTime, speed) {
+        update: function (deltaTime, speed) {
             var increment = Math.floor(speed * (FPS / 1000) * deltaTime);
             if (this.xPos[0] <= 0) {
                 this.updateXPos(0, increment)
@@ -1425,18 +1448,19 @@ clearTimeout(id);
             }
             this.draw()
         },
-        reset: function() {
+        reset: function () {
             this.xPos[0] = 0;
             this.xPos[1] = HorizonLine.dimensions.WIDTH
         }
     };
 
-    function Horizon(canvas, spritePos, dimensions, gapCoefficient) {
+    function Horizon(canvas, spritePos, dimensions, gapCoefficient, rng) {
         this.canvas = canvas;
         this.canvasCtx = this.canvas.getContext('2d');
         this.config = Horizon.config;
         this.dimensions = dimensions;
         this.gapCoefficient = gapCoefficient;
+        this.rng = rng;
         this.obstacles = [];
         this.obstacleHistory = [];
         this.horizonOffsets = [0, 0];
@@ -1455,11 +1479,11 @@ clearTimeout(id);
         MAX_CLOUDS: 6
     };
     Horizon.prototype = {
-        init: function() {
+        init: function () {
             this.addCloud();
-            this.horizonLine = new HorizonLine(this.canvas, this.spritePos.HORIZON)
+            this.horizonLine = new HorizonLine(this.canvas, this.spritePos.HORIZON, this.rng)
         },
-        update: function(deltaTime, currentSpeed, updateObstacles) {
+        update: function (deltaTime, currentSpeed, updateObstacles) {
             this.runningTime += deltaTime;
             this.horizonLine.update(deltaTime, currentSpeed);
             this.updateClouds(deltaTime, currentSpeed);
@@ -1467,7 +1491,7 @@ clearTimeout(id);
                 this.updateObstacles(deltaTime, currentSpeed)
             }
         },
-        updateClouds: function(deltaTime, speed) {
+        updateClouds: function (deltaTime, speed) {
             var cloudSpeed = this.cloudSpeed / 1000 * deltaTime * speed;
             var numClouds = this.clouds.length;
             if (numClouds) {
@@ -1475,15 +1499,15 @@ clearTimeout(id);
                     this.clouds[i].update(cloudSpeed)
                 }
                 var lastCloud = this.clouds[numClouds - 1];
-                if (numClouds < this.config.MAX_CLOUDS && (this.dimensions.WIDTH - lastCloud.xPos) > lastCloud.cloudGap && this.cloudFrequency > Math.random()) {
+                if (numClouds < this.config.MAX_CLOUDS && (this.dimensions.WIDTH - lastCloud.xPos) > lastCloud.cloudGap && this.cloudFrequency > this.rng.nextFloat()) {
                     this.addCloud()
                 }
-                this.clouds = this.clouds.filter(function(obj) {
+                this.clouds = this.clouds.filter(function (obj) {
                     return !obj.remove
                 })
             }
         },
-        updateObstacles: function(deltaTime, currentSpeed) {
+        updateObstacles: function (deltaTime, currentSpeed) {
             var updatedObstacles = this.obstacles.slice(0);
             for (var i = 0; i < this.obstacles.length; i++) {
                 var obstacle = this.obstacles[i];
@@ -1503,37 +1527,37 @@ clearTimeout(id);
                 this.addNewObstacle(currentSpeed)
             }
         },
-        addNewObstacle: function(currentSpeed) {
-            var obstacleTypeIndex = getRandomNum(0, Obstacle.types.length - 1);
+        addNewObstacle: function (currentSpeed) {
+            var obstacleTypeIndex = this.rng.nextInt(0, Obstacle.types.length - 1);
             var obstacleType = Obstacle.types[obstacleTypeIndex];
             if (this.duplicateObstacleCheck(obstacleType.type) || currentSpeed < obstacleType.minSpeed) {
                 this.addNewObstacle(currentSpeed)
             } else {
                 var obstacleSpritePos = this.spritePos[obstacleType.type];
-                this.obstacles.push(new Obstacle(this.canvasCtx, obstacleType, obstacleSpritePos, this.dimensions, this.gapCoefficient, currentSpeed));
+                this.obstacles.push(new Obstacle(this.canvasCtx, obstacleType, obstacleSpritePos, this.dimensions, this.gapCoefficient, currentSpeed, this.rng));
                 this.obstacleHistory.unshift(obstacleType.type);
                 if (this.obstacleHistory.length > 1) {
                     this.obstacleHistory.splice(Runner.config.MAX_OBSTACLE_DUPLICATION)
                 }
             }
         },
-        duplicateObstacleCheck: function(nextObstacleType) {
+        duplicateObstacleCheck: function (nextObstacleType) {
             var duplicateCount = 0;
             for (var i = 0; i < this.obstacleHistory.length; i++) {
                 duplicateCount = this.obstacleHistory[i] == nextObstacleType ? duplicateCount + 1 : 0
             }
             return duplicateCount >= Runner.config.MAX_OBSTACLE_DUPLICATION
         },
-        reset: function() {
+        reset: function () {
             this.obstacles = [];
             this.horizonLine.reset()
         },
-        resize: function(width, height) {
+        resize: function (width, height) {
             this.canvas.width = width;
             this.canvas.height = height
         },
-        addCloud: function() {
-            this.clouds.push(new Cloud(this.canvas, this.spritePos.CLOUD, this.dimensions.WIDTH))
+        addCloud: function () {
+            this.clouds.push(new Cloud(this.canvas, this.spritePos.CLOUD, this.dimensions.WIDTH, this.rng))
         }
     }
 })();

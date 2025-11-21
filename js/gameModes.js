@@ -1,12 +1,23 @@
 ﻿(function () {
     const royaleNames = ['Quicksilver', 'Nebula', 'CometRush', 'ByteKnight', 'NovaBlade', 'ShadowDash', 'CircuitFox', 'Zenith', 'NightPulse', 'EchoSprite', 'Sunset', 'Vapor', 'Lumen', 'Solaris'];
-    const matchmakerUrl = window.DINO_MATCHMAKER_URL || '';
+    const matchmakerUrl = 'ws://localhost:8080';
     let activeMode = 'single';
     let singleRunner = null;
     let localRunners = [];
     let localActive = true;
     let localReadyFlags = { p1: false, p2: false };
     let localReadyHandler = null;
+    let localGameState = 'IDLE'; // IDLE, PLAYING, CRASHED, CONFIRMING
+    let localCrashTimer = null;
+
+    // VS AI State
+    let vsAiState = {
+        player: null,
+        bots: [],
+        alive: 0
+    };
+
+    // Battle Royale State
     let royaleState = {
         player: null,
         rivals: [],
@@ -14,9 +25,49 @@
         roomName: 'Neon Lobby',
         playerName: 'You',
         alive: 0,
-        roster: []
+        roster: [],
+        matchmaker: null,
+        seed: null,
+        runnerMap: {} // Map server ID to runner instance
     };
 
+    // Monkey-patch Runner to support holding keys for auto-jump
+    const originalOnKeyDown = Runner.prototype.onKeyDown;
+    const originalOnKeyUp = Runner.prototype.onKeyUp;
+    const originalUpdate = Runner.prototype.update;
+
+    Runner.prototype.onKeyDown = function (e) {
+        if (!this.keysPressed) this.keysPressed = {};
+        this.keysPressed[String(e.keyCode)] = true;
+        originalOnKeyDown.call(this, e);
+    };
+
+    Runner.prototype.onKeyUp = function (e) {
+        // Block Runner's built-in restart during Local 2P crash/confirm states
+        if (localRunners.includes(this) && (localGameState === 'CRASHED' || localGameState === 'CONFIRMING')) {
+            if (!this.keysPressed) this.keysPressed = {};
+            this.keysPressed[String(e.keyCode)] = false;
+            return; // Don't call original which might trigger restart()
+        }
+
+        if (!this.keysPressed) this.keysPressed = {};
+        this.keysPressed[String(e.keyCode)] = false;
+        originalOnKeyUp.call(this, e);
+    };
+
+    Runner.prototype.update = function () {
+        if (this.activated && !this.crashed && !this.paused && this.keysPressed) {
+            if (!this.tRex.jumping && !this.tRex.ducking) {
+                const jumpKeys = Object.keys(this.controlMap.JUMP);
+                const isJumpHeld = jumpKeys.some(k => this.keysPressed[k]);
+                if (isJumpHeld) {
+                    this.playSound(this.soundFx.BUTTON_PRESS);
+                    this.tRex.startJump(this.currentSpeed);
+                }
+            }
+        }
+        originalUpdate.call(this);
+    };
     const setText = (id, value) => {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
@@ -120,39 +171,72 @@
             onScore: (score) => setText('single-score', score),
             onCrash: () => setText('single-status', 'Game over — press Space or Up to restart.')
         });
-        setText('single-status', 'Press Space or Up to run immediately.');
     };
 
     // Local 2P
     const handleLocalCrash = (index) => {
-        if (!localActive) return;
+        // Only handle crash if we are currently playing
+        if (localGameState !== 'PLAYING') return;
+
+        // Transition to CRASHED state immediately
+        localGameState = 'CRASHED';
+
+        // Pause ALL runners immediately to freeze the state
+        localRunners.forEach(r => {
+            if (r) r.stop();
+        });
+
         const stateId = index === 0 ? 'local-p1-state' : 'local-p2-state';
-        const name = index === 0 ? 'Player 1' : 'Player 2';
+
+        // Mark the crashed player visually
         setText(stateId, 'Crashed');
         const stateEl = document.getElementById(stateId);
         if (stateEl) {
             stateEl.classList.remove('status-alive');
             stateEl.classList.add('status-dead');
         }
-        const survivors = localRunners.filter(r => r && !r.crashed);
-        if (survivors.length <= 1) {
-            localActive = false;
-            if (survivors.length === 1) {
-                const winnerIdx = localRunners.indexOf(survivors[0]);
-                const winnerId = winnerIdx === 0 ? 'local-p1-state' : 'local-p2-state';
-                setText(winnerId, 'Winner');
-                const el = document.getElementById(winnerId);
-                if (el) {
-                    el.classList.remove('status-dead');
-                    el.classList.add('status-alive');
-                }
-                setText('local-status', `${survivors[0].name} wins the duel!`);
-            } else {
-                setText('local-status', 'Both players wiped out — rematch?');
-            }
+
+        const p1Crashed = localRunners[0].crashed;
+        const p2Crashed = localRunners[1].crashed;
+
+        if (p1Crashed && p2Crashed) {
+            setText('local-status', 'Draw! Pausing...');
         } else {
-            setText('local-status', `${name} is out, keep going!`);
+            // One survivor
+            const survivor = p1Crashed ? localRunners[1] : localRunners[0];
+            const winnerId = p1Crashed ? 'local-p2-state' : 'local-p1-state';
+
+            setText(winnerId, 'Winner');
+            const el = document.getElementById(winnerId);
+            if (el) el.classList.add('status-alive');
+
+            setText('local-status', `${survivor.name} wins! Pausing...`);
         }
+
+        // Start timer for confirmation phase
+        if (localCrashTimer) clearTimeout(localCrashTimer);
+        localCrashTimer = setTimeout(() => {
+            localGameState = 'CONFIRMING';
+            setText('local-status', 'Both players press Jump to restart');
+
+            const confirmFlags = { p1: false, p2: false };
+            const confirmHandler = (e) => {
+                if (localGameState !== 'CONFIRMING') {
+                    document.removeEventListener('keydown', confirmHandler);
+                    return;
+                }
+
+                const code = String(e.keyCode);
+                if (code === '87') confirmFlags.p1 = true; // W
+                if (['38', '32', '13'].includes(code)) confirmFlags.p2 = true; // Up/Space/Enter
+
+                if (confirmFlags.p1 && confirmFlags.p2) {
+                    document.removeEventListener('keydown', confirmHandler);
+                    resetLocal();
+                }
+            };
+            document.addEventListener('keydown', confirmHandler);
+        }, 2000);
     };
 
     const waitForLocalConfirm = () => {
@@ -181,18 +265,38 @@
             if (localReadyFlags.p1 && localReadyFlags.p2) {
                 document.removeEventListener('keydown', localReadyHandler);
                 localReadyHandler = null;
+                const seed = Date.now();
                 localRunners.forEach(r => {
                     if (r && r.removeStartText) {
                         r.removeStartText();
                     }
-                    if (r && r.play) {
-                        r.play();
-                        if (r.tRex) {
-                            r.tRex.startJump(r.currentSpeed);
-                        }
-                    }
+                });
+
+                // Recreate runners with shared seed for sync
+                localRunners.forEach(destroyRunner);
+                localRunners = [];
+                localRunners.push(createRunner('local-p1', {
+                    name: 'Player 1',
+                    rngSeed: seed,
+                    controls: buildControls(['87'], ['83']),
+                    onScore: (score) => setText('local-p1-score', score),
+                    onCrash: () => handleLocalCrash(0)
+                }));
+                localRunners.push(createRunner('local-p2', {
+                    name: 'Player 2',
+                    rngSeed: seed,
+                    controls: buildControls(['38', '32'], ['40']),
+                    onScore: (score) => setText('local-p2-score', score),
+                    onCrash: () => handleLocalCrash(1)
+                }));
+
+                localRunners.forEach(r => {
+                    r.activated = true;
+                    r.play();
+                    r.tRex.startJump(r.currentSpeed);
                     setRunnerActive(r, true);
                 });
+                localGameState = 'PLAYING';
             }
         };
         document.addEventListener('keydown', localReadyHandler);
@@ -207,6 +311,8 @@
 
     const resetLocal = () => {
         localActive = true;
+        if (localCrashTimer) clearTimeout(localCrashTimer);
+        localGameState = 'IDLE';
         clearLocalConfirm();
         localRunners.forEach(destroyRunner);
         localRunners = [];
@@ -221,8 +327,12 @@
         });
         setText('local-status', 'Waiting for confirmations...');
 
+        const seed = Date.now();
+
+        // Create initial runners just for display
         localRunners.push(createRunner('local-p1', {
             name: 'Player 1',
+            rngSeed: seed,
             controls: buildControls(['87'], ['83']),
             onScore: (score) => setText('local-p1-score', score),
             onCrash: () => handleLocalCrash(0)
@@ -231,6 +341,7 @@
 
         localRunners.push(createRunner('local-p2', {
             name: 'Player 2',
+            rngSeed: seed,
             controls: buildControls(['38', '32'], ['40']),
             onScore: (score) => setText('local-p2-score', score),
             onCrash: () => handleLocalCrash(1)
@@ -239,97 +350,184 @@
         waitForLocalConfirm();
     };
 
-    // Local relay fallback
-    class LocalRelay {
-        constructor(room, name, onRoster) {
-            this.room = room;
-            this.name = name;
-            this.onRoster = onRoster;
-            if (!LocalRelay.rosters[this.room]) LocalRelay.rosters[this.room] = [];
-            this.channel = new BroadcastChannel('dino-royale-relay');
-            this.handle = this.handle.bind(this);
-            this.channel.addEventListener('message', this.handle);
-            this.ping();
-            this.pinger = setInterval(() => this.ping(), 2000);
-        }
-        handle(evt) {
-            const payload = evt.data;
-            if (!payload || payload.room !== this.room || payload.type !== 'presence') return;
-            const merged = Array.from(new Set([...(LocalRelay.rosters[this.room] || []), ...(payload.roster || [])]));
-            LocalRelay.rosters[this.room] = merged;
-            this.onRoster(merged);
-        }
-        ping() {
-            this.channel.postMessage({ type: 'presence', room: this.room, roster: LocalRelay.rosters[this.room] });
-        }
-        announceJoin() {
-            const roster = LocalRelay.rosters[this.room];
-            if (!roster.includes(this.name)) {
-                roster.push(this.name);
-            }
-            this.ping();
-            this.onRoster(roster);
-        }
-        destroy() {
-            clearInterval(this.pinger);
-            this.channel.removeEventListener('message', this.handle);
-            this.channel.close();
-            LocalRelay.rosters[this.room] = LocalRelay.rosters[this.room].filter(n => n !== this.name);
-        }
-    }
-    LocalRelay.rosters = {};
+    // VS AI
+    const resetVsAi = () => {
+        destroyRunner(vsAiState.player);
+        vsAiState.bots.forEach(destroyRunner);
+        vsAiState.bots = [];
 
+        ['vs-ai-player-score', 'vs-ai-bot-1-score', 'vs-ai-bot-2-score'].forEach(id => setText(id, '0'));
+        ['vs-ai-player-state', 'vs-ai-bot-1-state', 'vs-ai-bot-2-state'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = 'Alive';
+                el.classList.remove('status-dead');
+                el.classList.add('status-alive');
+            }
+        });
+        setText('vs-ai-status', 'Press Start to begin');
+
+        const seed = Date.now();
+
+        vsAiState.player = createRunner('vs-ai-player', {
+            name: 'You',
+            rngSeed: seed,
+            onScore: (score) => setText('vs-ai-player-score', score),
+            onCrash: () => {
+                setText('vs-ai-player-state', 'Crashed');
+                document.getElementById('vs-ai-player-state').classList.add('status-dead');
+                checkVsAiWin();
+            }
+        });
+
+        const botControls = buildControls([], []);
+        const bot1 = createRunner('vs-ai-bot-1', {
+            name: 'Bot 1',
+            rngSeed: seed,
+            controls: botControls,
+            onScore: (score) => setText('vs-ai-bot-1-score', score),
+            onCrash: () => {
+                setText('vs-ai-bot-1-state', 'Crashed');
+                document.getElementById('vs-ai-bot-1-state').classList.add('status-dead');
+                checkVsAiWin();
+            }
+        });
+        const bot2 = createRunner('vs-ai-bot-2', {
+            name: 'Bot 2',
+            rngSeed: seed,
+            controls: botControls,
+            onScore: (score) => setText('vs-ai-bot-2-score', score),
+            onCrash: () => {
+                setText('vs-ai-bot-2-state', 'Crashed');
+                document.getElementById('vs-ai-bot-2-state').classList.add('status-dead');
+                checkVsAiWin();
+            }
+        });
+
+        vsAiState.bots = [bot1, bot2];
+        setRunnerActive(vsAiState.player, false);
+    };
+
+    const startVsAi = () => {
+        if (!vsAiState.player) resetVsAi();
+
+        const seed = Date.now();
+        // Recreate with new seed
+        destroyRunner(vsAiState.player);
+        vsAiState.bots.forEach(destroyRunner);
+
+        vsAiState.player = createRunner('vs-ai-player', {
+            name: 'You',
+            rngSeed: seed,
+            onScore: (score) => setText('vs-ai-player-score', score),
+            onCrash: () => {
+                setText('vs-ai-player-state', 'Crashed');
+                document.getElementById('vs-ai-player-state').classList.add('status-dead');
+                checkVsAiWin();
+            }
+        });
+
+        const botControls = buildControls([], []);
+        const bot1 = createRunner('vs-ai-bot-1', {
+            name: 'Bot 1',
+            rngSeed: seed,
+            controls: botControls,
+            onScore: (score) => setText('vs-ai-bot-1-score', score),
+            onCrash: () => {
+                setText('vs-ai-bot-1-state', 'Crashed');
+                document.getElementById('vs-ai-bot-1-state').classList.add('status-dead');
+                checkVsAiWin();
+            }
+        });
+        const bot2 = createRunner('vs-ai-bot-2', {
+            name: 'Bot 2',
+            rngSeed: seed,
+            controls: botControls,
+            onScore: (score) => setText('vs-ai-bot-2-score', score),
+            onCrash: () => {
+                setText('vs-ai-bot-2-state', 'Crashed');
+                document.getElementById('vs-ai-bot-2-state').classList.add('status-dead');
+                checkVsAiWin();
+            }
+        });
+        vsAiState.bots = [bot1, bot2];
+
+        setText('vs-ai-status', 'Running!');
+
+        [vsAiState.player, ...vsAiState.bots].forEach(r => {
+            r.activated = true;
+            r.play();
+            r.tRex.startJump(r.currentSpeed);
+        });
+        setRunnerActive(vsAiState.player, true);
+        attachBotBrain(bot1, 0.9);
+        attachBotBrain(bot2, 0.85);
+    };
+
+    const checkVsAiWin = () => {
+        if (vsAiState.player.crashed) {
+            setText('vs-ai-status', 'You crashed! Bots win.');
+        } else if (vsAiState.bots.every(b => b.crashed)) {
+            setText('vs-ai-status', 'Victory! You outlasted the bots.');
+        }
+    };
+
+    // Battle Royale (Online)
     class Matchmaker {
-        constructor(onRoster, onError) {
+        constructor(onRoster, onGameStart, onRivalUpdate, onError) {
             this.socket = null;
             this.onRoster = onRoster;
+            this.onGameStart = onGameStart;
+            this.onRivalUpdate = onRivalUpdate;
             this.onError = onError;
-            this.relay = null;
         }
         connect({ name, room, quick }) {
-            if (matchmakerUrl) {
-                try {
-                    this.socket = new WebSocket(matchmakerUrl);
-                    this.socket.onopen = () => {
-                        this.socket.send(JSON.stringify({ type: 'join', room: quick ? 'quickplay' : room, name }));
-                    };
-                    this.socket.onmessage = (evt) => {
-                        try {
-                            const data = JSON.parse(evt.data);
-                            if (data.type === 'roster' && Array.isArray(data.players)) {
-                                this.onRoster(data.players);
-                            } else if (data.type === 'error' && this.onError) {
-                                this.onError(data.message || 'Matchmaker error');
-                            }
-                        } catch (err) {
-                            if (this.onError) this.onError(err.message);
+            try {
+                this.socket = new WebSocket(matchmakerUrl);
+                this.socket.onopen = () => {
+                    const type = quick ? 'QUICK_PLAY' : 'JOIN_ROOM';
+                    this.socket.send(JSON.stringify({ type, room, playerName: name }));
+                };
+                this.socket.onmessage = (evt) => {
+                    try {
+                        const data = JSON.parse(evt.data);
+                        if (data.type === 'ROSTER_UPDATE') {
+                            this.onRoster(data.roster);
+                        } else if (data.type === 'GAME_START') {
+                            this.onGameStart(data.seed);
+                        } else if (data.type === 'COUNTDOWN_START' || data.type === 'COUNTDOWN_UPDATE') {
+                            setText('royale-status', `Starting in ${data.count}...`);
+                        } else if (data.type === 'RIVAL_UPDATE') {
+                            this.onRivalUpdate(data.id, data.state);
                         }
-                    };
-                    this.socket.onerror = () => {
-                        if (this.onError) this.onError('Unable to reach server, falling back to local relay.');
-                        this.useRelay(name, room || 'Local Lobby');
-                    };
-                } catch (err) {
-                    if (this.onError) this.onError(err.message);
-                    this.useRelay(name, room || 'Local Lobby');
-                }
-            } else {
-                this.useRelay(name, room || 'Local Lobby');
+                    } catch (err) {
+                        console.error(err);
+                    }
+                };
+                this.socket.onerror = () => {
+                    if (this.onError) this.onError('Unable to connect to server.');
+                };
+                this.socket.onclose = () => {
+                    if (this.onError) this.onError('Disconnected from server.');
+                };
+            } catch (err) {
+                if (this.onError) this.onError(err.message);
             }
         }
-        useRelay(name, room) {
-            if (this.relay) this.relay.destroy();
-            this.relay = new LocalRelay(room, name, this.onRoster);
-            this.relay.announceJoin();
+        startGame() {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify({ type: 'START_GAME' }));
+            }
+        }
+        sendUpdate(state) {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify({ type: 'PLAYER_UPDATE', state }));
+            }
         }
         destroy() {
             if (this.socket) {
                 this.socket.close();
                 this.socket = null;
-            }
-            if (this.relay) {
-                this.relay.destroy();
-                this.relay = null;
             }
         }
     }
@@ -347,7 +545,8 @@
             rivals: [],
             minis: [],
             alive: 0,
-            roster: royaleState.roster
+            roster: [],
+            runnerMap: {}
         });
         const miniGrid = document.getElementById('royale-mini-grid');
         if (miniGrid) miniGrid.innerHTML = '';
@@ -362,32 +561,13 @@
         });
     };
 
-    const updateAliveBadge = () => {
-        setText('royale-status', `Room: ${royaleState.roomName} — ${royaleState.alive} alive`);
-    };
-
-    const onRoyaleCrash = (runner, labelId) => {
-        const badge = document.getElementById(labelId);
-        if (badge) {
-            badge.textContent = 'Down';
-            badge.classList.remove('status-alive');
-            badge.classList.add('status-dead');
-        }
-        royaleState.alive = Math.max(royaleState.alive - 1, 0);
-        updateAliveBadge();
-        const survivors = [royaleState.player].concat(royaleState.rivals).concat(royaleState.minis).filter(r => r && !r.crashed);
-        if (survivors.length === 1) {
-            setText('royale-status', `${survivors[0].name} takes the crown!`);
-        }
-    };
-
-    const createMiniRunner = (playerName, skill, controls, index) => {
+    const createMiniRunner = (player, skill, controls, index, seed) => {
         const grid = document.getElementById('royale-mini-grid');
         const slot = document.createElement('div');
         slot.className = 'mini-tile';
         const label = document.createElement('div');
         label.className = 'lane-label';
-        label.innerHTML = `<strong>${playerName}</strong><span class="muted">Mini</span>`;
+        label.innerHTML = `<strong>${player.name}</strong><span class="muted">Mini</span>`;
         const host = document.createElement('div');
         const hostId = 'mini-' + index;
         host.id = hostId;
@@ -401,112 +581,208 @@
         grid.appendChild(slot);
 
         const runner = createRunner(hostId, {
-            name: playerName,
+            name: player.name,
+            rngSeed: seed,
             controls: controls || buildControls([], []),
             dimensions: { HEIGHT: 110 },
             onScore: (score) => setText(`${hostId}-score`, score),
-            onCrash: () => onRoyaleCrash(runner, `${hostId}-state`)
+            onCrash: () => {
+                const el = document.getElementById(`${hostId}-state`);
+                if (el) {
+                    el.textContent = 'Down';
+                    el.classList.remove('status-alive');
+                    el.classList.add('status-dead');
+                }
+            }
         });
         if (runner) runner.stopListening();
-        attachBotBrain(runner, skill);
+        // Only attach bot brain if it's a bot (no ID)
+        if (!player.id) {
+            attachBotBrain(runner, skill);
+        }
         return runner;
     };
 
     const pickNames = (selfName, roster) => {
-        const others = roster.filter(n => n !== selfName);
-        const fill = [...others, ...royaleNames].slice(0, 6);
-        return {
-            live: [selfName, fill[0] || 'Rival A', fill[1] || 'Rival B'],
-            minis: fill.slice(2, 6)
-        };
+        // Roster contains objects {id, name, isHost}
+        // We need to separate real players from bots if roster is small
+        const others = roster.filter(p => p.name !== selfName);
+
+        const live = [{ name: selfName, id: 'me' }]; // Placeholder for self
+        const minis = [];
+
+        // Fill live slots (Rival A, Rival B)
+        if (others.length > 0) live.push(others[0]);
+        else live.push({ name: royaleNames[0], isBot: true });
+
+        if (others.length > 1) live.push(others[1]);
+        else live.push({ name: royaleNames[1], isBot: true });
+
+        // Fill minis
+        for (let i = 2; i < others.length; i++) {
+            minis.push(others[i]);
+        }
+        // Fill remaining minis with bots if needed (up to 4 minis total)
+        while (minis.length < 4) {
+            minis.push({ name: royaleNames[minis.length + 2], isBot: true });
+        }
+
+        return { live, minis };
     };
 
-    const startRoyale = ({ quick = false } = {}) => {
+    const hydrateRoyale = (seed) => {
+        const { live, minis } = pickNames(royaleState.playerName, royaleState.roster);
+
+        setText('royale-player-label', `${live[0].name} (You)`);
+        setText('royale-rival-a-label', live[1].name);
+        setText('royale-rival-b-label', live[2].name);
+
+        // Destroy existing
+        destroyRunner(royaleState.player);
+        royaleState.rivals.forEach(destroyRunner);
+        royaleState.minis.forEach(destroyRunner);
+        document.getElementById('royale-mini-grid').innerHTML = '';
+        royaleState.runnerMap = {};
+
+        // Player
+        royaleState.player = createRunner('royale-player', {
+            name: live[0].name,
+            rngSeed: seed,
+            onScore: (score) => {
+                setText('royale-player-score', score);
+                if (royaleState.matchmaker) royaleState.matchmaker.sendUpdate({ score, crashed: false });
+            },
+            onCrash: () => {
+                setText('royale-player-state', 'Down');
+                document.getElementById('royale-player-state').classList.add('status-dead');
+                if (royaleState.matchmaker) royaleState.matchmaker.sendUpdate({ score: 0, crashed: true });
+            }
+        });
+
+        // Rivals
+        const botControls = buildControls([], []);
+
+        const createRival = (player, hostId, scoreId, stateId, skill) => {
+            const runner = createRunner(hostId, {
+                name: player.name,
+                rngSeed: seed,
+                controls: botControls,
+                onScore: (score) => setText(scoreId, score),
+                onCrash: () => {
+                    setText(stateId, 'Down');
+                    document.getElementById(stateId).classList.add('status-dead');
+                }
+            });
+            if (player.id) {
+                royaleState.runnerMap[player.id] = { runner, scoreId, stateId };
+            } else {
+                attachBotBrain(runner, skill);
+            }
+            return runner;
+        };
+
+        const rivalA = createRival(live[1], 'royale-rival-a', 'royale-rival-a-score', 'royale-rival-a-state', 0.9);
+        const rivalB = createRival(live[2], 'royale-rival-b', 'royale-rival-b-score', 'royale-rival-b-state', 0.85);
+
+        royaleState.rivals = [rivalA, rivalB];
+
+        // Minis
+        royaleState.minis = [];
+        minis.forEach((player, i) => {
+            const runner = createMiniRunner(player, 0.72 + i * 0.03, botControls, i, seed);
+            royaleState.minis.push(runner);
+            if (player.id) {
+                royaleState.runnerMap[player.id] = {
+                    runner,
+                    scoreId: `mini-${i}-score`,
+                    stateId: `mini-${i}-state`
+                };
+            }
+        });
+
+        // Start all
+        [royaleState.player, ...royaleState.rivals, ...royaleState.minis].forEach(r => {
+            r.activated = true;
+            r.play();
+            r.tRex.startJump(r.currentSpeed);
+        });
+        setRunnerActive(royaleState.player, true);
+    };
+
+    const joinRoyale = ({ quick = false } = {}) => {
         tearDownRoyale();
         const pName = document.getElementById('player-name').value.trim() || 'You';
         const roomInput = document.getElementById('room-name').value.trim() || 'Open Lobby';
         royaleState.playerName = pName;
         royaleState.roomName = quick ? 'Quick Play' : roomInput;
-        setText('royale-status', 'Connecting to lobby...');
+        setText('royale-status', 'Connecting...');
 
-        if (royaleState.matchmaker) {
-            royaleState.matchmaker.destroy();
-            royaleState.matchmaker = null;
-        }
         const matchmaker = new Matchmaker((roster) => {
             royaleState.roster = roster;
-            hydrateRoyale();
-        }, (msg) => {
-            setText('royale-status', msg);
-            hydrateRoyale();
+            setText('royale-status', `Lobby: ${roster.length} players`);
+        }, (seed) => {
+            setText('royale-status', 'Game Started!');
+            hydrateRoyale(seed);
+        }, (id, state) => {
+            // Handle rival update
+            const target = royaleState.runnerMap[id];
+            if (target) {
+                if (state.crashed) {
+                    if (!target.runner.crashed) {
+                        target.runner.crashed = true; // Visual only
+                        target.runner.tRex.startCrash();
+                        setText(target.stateId, 'Down');
+                        document.getElementById(target.stateId).classList.add('status-dead');
+                    }
+                } else {
+                    if (state.score !== undefined) {
+                        setText(target.scoreId, state.score);
+                    }
+                }
+            }
+        }, (err) => {
+            setText('royale-status', err);
         });
+
         matchmaker.connect({ name: pName, room: roomInput, quick });
         royaleState.matchmaker = matchmaker;
     };
 
-    const hydrateRoyale = () => {
-        if (!royaleState.roster || royaleState.roster.length === 0) {
-            royaleState.roster = [royaleState.playerName];
+    const startRoyaleGame = () => {
+        if (royaleState.matchmaker) {
+            royaleState.matchmaker.startGame();
         }
-        const { live, minis } = pickNames(royaleState.playerName, royaleState.roster);
-        setText('royale-player-label', `${live[0]} (You)`);
-        setText('royale-rival-a-label', live[1]);
-        setText('royale-rival-b-label', live[2]);
-
-        royaleState.player = createRunner('royale-player', {
-            name: live[0],
-            onScore: (score) => setText('royale-player-score', score),
-            onCrash: () => onRoyaleCrash(royaleState.player, 'royale-player-state')
-        });
-        triggerBotStart(royaleState.player);
-
-        const botControls = buildControls([], []);
-        const rivalA = createRunner('royale-rival-a', {
-            name: live[1],
-            controls: botControls,
-            onScore: (score) => setText('royale-rival-a-score', score),
-            onCrash: () => onRoyaleCrash(rivalA, 'royale-rival-a-state')
-        });
-        const rivalB = createRunner('royale-rival-b', {
-            name: live[2],
-            controls: botControls,
-            onScore: (score) => setText('royale-rival-b-score', score),
-            onCrash: () => onRoyaleCrash(rivalB, 'royale-rival-b-state')
-        });
-        royaleState.rivals = [rivalA, rivalB];
-        if (rivalA) rivalA.stopListening();
-        if (rivalB) rivalB.stopListening();
-        attachBotBrain(rivalA, 0.9);
-        attachBotBrain(rivalB, 0.82);
-
-        royaleState.minis = [];
-        minis.forEach((name, i) => {
-            royaleState.minis.push(createMiniRunner(name, 0.72 + i * 0.03, botControls, i));
-        });
-        royaleState.alive = 1 + royaleState.rivals.length + royaleState.minis.length;
-        updateAliveBadge();
     };
 
     const switchMode = (mode) => {
         activeMode = mode;
         document.querySelectorAll('.mode-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + mode));
         document.querySelectorAll('.tab-buttons button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+
         setRunnerActive(singleRunner, false);
         localRunners.forEach(r => setRunnerActive(r, false));
+        setRunnerActive(vsAiState.player, false);
         setRunnerActive(royaleState.player, false);
         clearLocalConfirm();
+
         if (mode === 'single') {
-            tearDownRoyale();
-            if (!singleRunner) resetSingle();
-            setRunnerActive(singleRunner, true);
+            setTimeout(() => {
+                if (!singleRunner) resetSingle();
+                setRunnerActive(singleRunner, true);
+            }, 100);
         }
-        if (mode === 'local') {
-            tearDownRoyale();
-            if (localRunners.length === 0) resetLocal(); else waitForLocalConfirm();
+        if (mode === 'local-2p') {
+            setTimeout(() => {
+                resetLocal();
+            }, 100);
+        }
+        if (mode === 'vs-ai') {
+            setTimeout(() => {
+                resetVsAi();
+            }, 100);
         }
         if (mode === 'royale') {
-            startRoyale();
-            setRunnerActive(royaleState.player, true);
+            tearDownRoyale();
         }
     };
 
@@ -514,12 +790,14 @@
         document.querySelectorAll('.tab-buttons button').forEach(btn => {
             btn.addEventListener('click', () => switchMode(btn.dataset.mode));
         });
-        document.getElementById('single-reset')?.addEventListener('click', resetSingle);
+        document.getElementById('single-start')?.addEventListener('click', resetSingle);
         document.getElementById('local-reset')?.addEventListener('click', resetLocal);
-        document.getElementById('royale-start')?.addEventListener('click', () => startRoyale());
-        document.getElementById('create-room')?.addEventListener('click', () => startRoyale({ quick: false }));
-        document.getElementById('join-room')?.addEventListener('click', () => startRoyale({ quick: false }));
-        document.getElementById('royale-quick')?.addEventListener('click', () => startRoyale({ quick: true }));
+        document.getElementById('vs-ai-start')?.addEventListener('click', startVsAi);
+
+        document.getElementById('create-room')?.addEventListener('click', () => joinRoyale({ quick: false }));
+        document.getElementById('join-room')?.addEventListener('click', () => joinRoyale({ quick: false }));
+        document.getElementById('royale-quick')?.addEventListener('click', () => joinRoyale({ quick: true }));
+        document.getElementById('royale-start')?.addEventListener('click', startRoyaleGame);
     };
 
     document.addEventListener('DOMContentLoaded', () => {
