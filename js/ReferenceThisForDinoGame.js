@@ -410,6 +410,9 @@
         clearCanvas: function () {
             this.canvasCtx.clearRect(0, 0, this.dimensions.WIDTH, this.dimensions.HEIGHT)
         },
+        setSimDelta: function (delta) {
+            this.simDelta = delta;
+        },
         update: function () {
             var sb = document.getElementById("shareBlock");
             if (sb) {
@@ -419,6 +422,15 @@
             var now = getTimeStamp();
             var deltaTime = now - (this.time || now);
             this.time = now;
+
+            // Delta Injection for Synchronization
+            if (this.simDelta !== undefined) {
+                deltaTime = this.simDelta;
+                this.simDelta = undefined; // Consume injected delta
+            } else if (deltaTime > 50) {
+                deltaTime = 50; // Clamp delta to avoid runaway simulation
+            }
+
             if (this.activated) {
                 this.clearCanvas();
                 if (this.tRex.jumping) {

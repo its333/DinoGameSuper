@@ -95,6 +95,15 @@ function startQuickPlayCountdown(roomId) {
     broadcastToRoom(roomId, { type: 'COUNTDOWN_START', count });
 
     quickPlayTimer = setInterval(() => {
+        // Cancel if players dropped below 2
+        if (!rooms[roomId] || rooms[roomId].size < 2) {
+            clearInterval(quickPlayTimer);
+            quickPlayTimer = null;
+            broadcastToRoom(roomId, { type: 'COUNTDOWN_CANCEL' });
+            console.log(`Countdown cancelled for room ${roomId} - not enough players`);
+            return;
+        }
+
         count--;
         if (count > 0) {
             broadcastToRoom(roomId, { type: 'COUNTDOWN_UPDATE', count });
@@ -115,6 +124,7 @@ function startGame(roomId) {
 wss.on('connection', (ws) => {
     ws.id = Math.random().toString(36).substr(2, 9);
     console.log(`New connection: ${ws.id}`);
+    ws.send(JSON.stringify({ type: 'WELCOME', id: ws.id }));
 
     ws.on('message', (message) => {
         try {

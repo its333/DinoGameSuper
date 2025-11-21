@@ -487,11 +487,12 @@
 
     // Battle Royale (Online)
     class Matchmaker {
-        constructor(onRoster, onGameStart, onRivalUpdate, onError) {
+        constructor(onRoster, onGameStart, onRivalUpdate, onWelcome, onError) {
             this.socket = null;
             this.onRoster = onRoster;
             this.onGameStart = onGameStart;
             this.onRivalUpdate = onRivalUpdate;
+            this.onWelcome = onWelcome;
             this.onError = onError;
         }
         connect({ name, room, quick }) {
@@ -506,6 +507,8 @@
                         const data = JSON.parse(evt.data);
                         if (data.type === 'ERROR') {
                             if (this.onError) this.onError(data.message);
+                        } else if (data.type === 'WELCOME') {
+                            if (this.onWelcome) this.onWelcome(data.id);
                         } else if (data.type === 'ROSTER_UPDATE') {
                             this.onRoster(data.roster);
                         } else if (data.type === 'GAME_START') {
@@ -627,6 +630,7 @@
             dimensions: { HEIGHT: 110 },
             onScore: (score) => setText(`${hostId}-score`, score),
             onCrash: () => {
+                runner.crashed = true; // CRITICAL: Mark runner as crashed
                 const el = document.getElementById(`${hostId}-state`);
                 if (el) {
                     el.textContent = 'Down';
@@ -714,7 +718,7 @@
         hydrateRoyale(Date.now(), true);
     };
 
-    const hydrateRoyale = (seed, warmup = false) => {
+    const hydrateRoyale = (seed, warmup = false, showPlaceholders = false) => {
         const { live, minis } = pickNames(royaleState.playerName, royaleState.roster || []);
 
         setText('royale-player-label', live[0]?.name || 'You');
@@ -753,6 +757,7 @@
                 }
             },
             onCrash: () => {
+                royaleState.player.crashed = true;
                 setText('royale-player-state', 'Down');
                 const playerStateEl = document.getElementById('royale-player-state');
                 if (playerStateEl) playerStateEl.classList.add('status-dead');
@@ -785,13 +790,20 @@
         };
 
         const createRivalRunner = (slotKey, player, meta, skill) => {
-            if (!player) return null;
+            const slotEl = document.getElementById(meta.hostId)?.parentElement;
+            if (!player) {
+                if (slotEl) slotEl.style.visibility = 'hidden';
+                return null;
+            }
+            if (slotEl) slotEl.style.visibility = 'visible';
+
             const runner = createRunner(meta.hostId, {
                 name: player.name,
                 rngSeed: seed,
                 controls: botControls,
                 onScore: (score) => setText(meta.scoreId, score),
                 onCrash: () => {
+                    runner.crashed = true; // CRITICAL: Mark runner as crashed
                     setText(meta.stateId, 'Down');
                     const stateEl = document.getElementById(meta.stateId);
                     if (stateEl) stateEl.classList.add('status-dead');
@@ -858,10 +870,12 @@
                 grid.appendChild(slot);
             }
         };
-        appendPlaceholder('royale-mini-left', leftCount, 3);
-        appendPlaceholder('royale-mini-right', rightCount, 3);
-        appendPlaceholder('royale-mini-row-top', topCount, 3);
-        appendPlaceholder('royale-mini-row-bottom', bottomCount, 4);
+        if (showPlaceholders) {
+            appendPlaceholder('royale-mini-left', leftCount, 3);
+            appendPlaceholder('royale-mini-right', rightCount, 3);
+            appendPlaceholder('royale-mini-row-top', topCount, 3);
+            appendPlaceholder('royale-mini-row-bottom', bottomCount, 4);
+        }
 
         // Keep shell width consistent regardless of rail fill state; no layout collapsing here.
 
@@ -884,8 +898,11 @@
         const allRunners = [royaleState.player, ...royaleState.rivals, ...royaleState.minis].filter(r => r);
         const survivor = allRunners.find(r => !r.crashed);
 
+        let winnerRunner = null;
         let winnerName = 'Unknown';
+
         if (survivor) {
+            winnerRunner = survivor;
             winnerName = survivor.name || 'A player';
         } else {
             // Find highest scorer
@@ -894,12 +911,21 @@
                 const score = r.distanceRan || 0;
                 if (score > maxScore) {
                     maxScore = score;
+                    winnerRunner = r;
                     winnerName = r.name || 'A player';
                 }
             });
         }
 
-        setText('royale-status', `Game Over! ${winnerName} wins!`);
+        // Check if local player won
+        const isWinner = winnerRunner === royaleState.player && !royaleState.player.crashed;
+
+        if (isWinner) {
+            setText('royale-status', 'Victory! You are the last dino standing!');
+        } else {
+            setText('royale-status', `Game Over! ${winnerName} wins!`);
+        }
+
         const returnBtn = document.getElementById('royale-return');
         const nextBtn = document.getElementById('royale-next');
         if (returnBtn) returnBtn.style.display = 'inline-block';
@@ -929,7 +955,7 @@
 
     const joinRoyale = ({ quick = false } = {}) => {
         tearDownRoyale();
-        const pName = document.getElementById('player-name').value.trim() || 'You';
+        const pName = document.getElementById('player-name').value.trim() || `Player${Date.now().toString().slice(-4)}`;
         const roomInput = document.getElementById('room-name').value.trim() || 'Open Lobby';
         royaleState.playerName = pName;
         royaleState.roomName = quick ? 'Quick Play' : roomInput;
@@ -955,8 +981,8 @@
             royaleState.player = createRunner('royale-player', {
                 name: pName,
                 rngSeed: 0,
-                onScore: () => {},
-                onCrash: () => {}
+                onScore: () => { },
+                onCrash: () => { }
             });
             setText('royale-player-label', pName);
         } else {
@@ -990,19 +1016,21 @@
                 if (startBtn) startBtn.style.display = isHost && roster.length >= 2 ? 'inline-block' : 'none';
                 setText('royale-status', `Lobby: ${roster.length} players`);
             } else {
+                // Server handles countdown for Quick Play
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+                royaleState.countingDown = false;
+
                 if (roster.length >= 2) {
-                    startAutoCountdown();
+                    setText('royale-status', 'Waiting for server countdown...');
                 } else {
-                    if (countdownInterval) {
-                        clearInterval(countdownInterval);
-                        countdownInterval = null;
-                    }
-                    royaleState.countingDown = false;
                     setText('royale-status', 'Waiting for players...');
                 }
-                if (!royaleState.countingDown) {
-                    setText('royale-status', roster.length >= 2 ? `Players found: ${roster.length}` : 'Searching for players...');
-                }
+
+                // Render preview with placeholders
+                hydrateRoyale(0, true, true);
             }
         };
 
@@ -1017,7 +1045,7 @@
             if (lobbyWaiting) lobbyWaiting.style.display = 'none';
             if (layout) layout.style.display = 'grid';
             if (startBtn) startBtn.style.display = 'none';
-            hydrateRoyale(seed);
+            hydrateRoyale(seed, false, false);
         }, (id, state) => {
             // Handle rival update
             const target = royaleState.runnerMap[id];
@@ -1036,6 +1064,9 @@
                     // Update score
                     if (state.score !== undefined) {
                         setText(target.scoreId, state.score);
+                        if (target.runner) {
+                            target.runner.distanceRan = state.score; // CRITICAL: Update distance for winner detection
+                        }
                     }
 
                     // Apply action states for visual feedback
@@ -1054,6 +1085,9 @@
                     }
                 }
             }
+        }, (id) => {
+            royaleState.myId = id;
+            console.log('My ID:', id);
         }, (err) => {
             setText('royale-status', err);
             setText('lobby-status-text', err);
@@ -1126,11 +1160,9 @@
 
         document.getElementById('create-room')?.addEventListener('click', () => joinRoyale({ quick: false }));
         document.getElementById('royale-quick')?.addEventListener('click', () => joinRoyale({ quick: true }));
-        document.getElementById('royale-start')?.addEventListener('click', startRoyaleGame);
         document.getElementById('royale-start-btn')?.addEventListener('click', startRoyaleGame);
-        document.getElementById('royale-leave-btn')?.addEventListener('click', () => {
-            tearDownRoyale();
-        });
+        document.getElementById('royale-leave-btn')?.addEventListener('click', tearDownRoyale);
+
         document.getElementById('debug-fill')?.addEventListener('click', debugFillRoyale);
         document.getElementById('royale-next')?.addEventListener('click', () => joinRoyale({ quick: true }));
         document.getElementById('royale-return')?.addEventListener('click', () => tearDownRoyale());
