@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dino Game Super — Multiplayer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0c1224;
+            --panel: rgba(255, 255, 255, 0.06);
+            --border: rgba(255, 255, 255, 0.12);
+            --accent: #7cf3c3;
+            --text: #f5f7fb;
+            --muted: #9aa3b8;
+            --danger: #ff6b6b;
+            --success: #64f4ac;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            color: var(--text);
+            background: radial-gradient(circle at 20% 20%, rgba(124, 243, 195, 0.1), transparent 25%), radial-gradient(circle at 80% 0%, rgba(255, 107, 107, 0.12), transparent 22%), var(--bg);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .app {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .title-block h1 {
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: -0.5px;
+        }
+        .title-block p {
+            margin: 4px 0 0;
+            color: var(--muted);
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        button {
+            border: none;
+            cursor: pointer;
+            padding: 10px 16px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #13c2ad, #6ee7b7);
+            color: #0c1224;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(19, 194, 173, 0.25);
+            transition: transform 120ms ease, box-shadow 120ms ease;
+        }
+        button.secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+            box-shadow: none;
+        }
+        button.ghost {
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            border: 1px solid var(--border);
+            box-shadow: none;
+        }
+        button.active {
+            outline: 2px solid var(--accent);
+            outline-offset: 0;
+        }
+        button:hover { transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
+        .mode-pane { display: none; }
+        .mode-pane.active { display: block; }
+        .mode-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+            margin-bottom: 18px;
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .card-header h2 { margin: 0; font-size: 20px; }
+        .card-header p { margin: 2px 0 0; color: var(--muted); }
+        .badge {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(124, 243, 195, 0.14);
+            border: 1px solid var(--border);
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 12px;
+        }
+        .stage { max-width: 960px; margin: 0 auto; }
+        .runner-host {
+            width: 100%;
+            min-height: 200px;
+            border-radius: 12px;
+            border: 1px dashed var(--border);
+            background: rgba(255,255,255,0.02);
+            padding: 10px 12px;
+            overflow: hidden;
+        }
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 8px;
+        }
+        .stacked-lanes { display: flex; flex-direction: column; gap: 14px; }
+        .lane-label { display: flex; justify-content: space-between; align-items: center; color: var(--muted); margin-bottom: 6px; font-size: 13px; }
+        .lane-label strong { color: var(--text); }
+        .stacked-lanes .runner-host { min-height: 180px; }
+        .status-alive { color: var(--success); }
+        .status-dead { color: var(--danger); }
+        .triple-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; }
+        .mini-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+        .mini-runner { transform: scale(0.78); transform-origin: top left; }
+        .mini-tile { border: 1px solid var(--border); border-radius: 10px; padding: 6px; background: rgba(255,255,255,0.03); }
+        .mini-tile .runner-host { min-height: 110px; }
+        .lobby { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px; }
+        .lobby input { border-radius: 10px; padding: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.04); color: var(--text); }
+        .muted { color: var(--muted); font-size: 13px; }
+        .divider { height: 1px; background: var(--border); margin: 14px 0; }
+        img.sprite { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        @media (max-width: 720px) { body { padding: 16px; } .runner-host { min-height: 170px; } }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <section class="hero">
+            <div class="title-block">
+                <h1>Dino Game Super — Multiplayer</h1>
+                <p>Chrome Dino rebuilt for solo runs, couch duels, and online battle royale.</p>
+            </div>
+            <div class="tab-buttons">
+                <button class="ghost active" data-mode="single">Single Player</button>
+                <button class="ghost" data-mode="local">2 Player</button>
+                <button class="ghost" data-mode="royale">Battle Royale</button>
+            </div>
+        </section>
+
+        <section class="mode-pane active" id="pane-single">
+            <div class="mode-card">
+                <div class="card-header">
+                    <div>
+                        <h2>Single Player</h2>
+                        <p>Authentic runner right on launch. Space or Up to jump, Down to duck.</p>
+                    </div>
+                    <div class="badge" id="single-status">Ready to run</div>
+                </div>
+                <div class="stage">
+                    <div class="runner-host" id="single-runner"></div>
+                    <div class="meta-row">
+                        <span>Score: <strong id="single-score">0</strong></span>
+                        <span class="muted">Controls: Space / Up</span>
+                    </div>
+                </div>
+                <div class="divider"></div>
+                <button id="single-reset">Reset Single</button>
+            </div>
+        </section>
+
+        <section class="mode-pane" id="pane-local">
+            <div class="mode-card">
+                <div class="card-header">
+                    <div>
+                        <h2>Local 2 Player</h2>
+                        <p>Stacked lanes, same keyboard. First to fall loses.</p>
+                    </div>
+                    <div class="badge" id="local-status">Ready</div>
+                </div>
+                <div class="stage">
+                    <div class="stacked-lanes">
+                        <div>
+                            <div class="lane-label"><strong>Player 1</strong><span class="muted">Jump: W · Duck: S</span></div>
+                            <div class="runner-host" id="local-p1"></div>
+                            <div class="meta-row">
+                                <span>Score: <strong id="local-p1-score">0</strong></span>
+                                <span id="local-p1-state" class="status-alive">Alive</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="lane-label"><strong>Player 2</strong><span class="muted">Jump: Up · Duck: Down</span></div>
+                            <div class="runner-host" id="local-p2"></div>
+                            <div class="meta-row">
+                                <span>Score: <strong id="local-p2-score">0</strong></span>
+                                <span id="local-p2-state" class="status-alive">Alive</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="divider"></div>
+                <button id="local-reset">Reset Duel</button>
+            </div>
+        </section>
+
+        <section class="mode-pane" id="pane-royale">
+            <div class="mode-card" id="royale-card">
+                <div class="card-header">
+                    <div>
+                        <h2>Battle Royale (Online)</h2>
+                        <p>Matchmake with real players via rooms or quick play. Up to 3 live lanes shown; the rest appear in mini tiles.</p>
+                    </div>
+                    <div class="badge" id="royale-status">Lobby idle</div>
+                </div>
+                <div class="lobby">
+                    <input id="player-name" type="text" placeholder="Your name" value="You">
+                    <input id="room-name" type="text" placeholder="Room name (creates if none)" value="Neon Lobby">
+                    <button id="create-room">Create / Join Room</button>
+                    <button id="join-room" class="secondary">Join by Name</button>
+                    <button id="royale-quick" class="ghost">Quick Play</button>
+                </div>
+                <div class="muted">Space or Up to jump in your lane. Rivals are streamed from the lobby; mini tiles show overflow players. If server is unreachable, bots fill the grid so you can still play.</div>
+                <div class="stage">
+                    <div class="triple-lanes">
+                        <div>
+                            <div class="lane-label"><strong id="royale-player-label">You</strong><span class="muted">Space / Up</span></div>
+                            <div class="runner-host" id="royale-player"></div>
+                            <div class="meta-row">
+                                <span>Score: <strong id="royale-player-score">0</strong></span>
+                                <span id="royale-player-state" class="status-alive">Alive</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="lane-label"><strong id="royale-rival-a-label">Rival A</strong><span class="muted">Live</span></div>
+                            <div class="runner-host" id="royale-rival-a"></div>
+                            <div class="meta-row">
+                                <span>Score: <strong id="royale-rival-a-score">0</strong></span>
+                                <span id="royale-rival-a-state" class="status-alive">Alive</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="lane-label"><strong id="royale-rival-b-label">Rival B</strong><span class="muted">Live</span></div>
+                            <div class="runner-host" id="royale-rival-b"></div>
+                            <div class="meta-row">
+                                <span>Score: <strong id="royale-rival-b-score">0</strong></span>
+                                <span id="royale-rival-b-state" class="status-alive">Alive</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mini-grid" id="royale-mini-grid"></div>
+                </div>
+                <div class="divider"></div>
+                <button id="royale-start">Start Battle</button>
+            </div>
+        </section>
+    </div>
+
+    <template id="audio-resources">
+        <audio id="offline-sound-press" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio>
+        <audio id="offline-sound-hit" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio>
+        <audio id="offline-sound-reached" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio>
+    </template>
+    <img id="offline-resources-1x" class="sprite" src="assets/offline-sprite-1x.png" alt="runner sprite sheet 1x">
+    <img id="offline-resources-2x" class="sprite" src="assets/offline-sprite-2x.png" alt="runner sprite sheet 2x">
+
+    <script src="js/ReferenceThisForDinoGame.js"></script>
+    <script src="js/gameModes.js"></script>
+</body>
+</html>
