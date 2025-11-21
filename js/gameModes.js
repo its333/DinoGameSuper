@@ -138,6 +138,7 @@
         return new Runner('#' + hostId, options || {});
     };
 
+
     const triggerBotStart = (runner) => {
         if (!runner) return;
         runner.activated = true;
@@ -148,18 +149,28 @@
     const attachBotBrain = (runner, skill = 0.9) => {
         if (!runner) return;
         triggerBotStart(runner);
+
+        // Each bot gets unique randomized behavior
+        const baseReactionWindow = 90 + Math.random() * 40; // 90-130
+        const reactionVariance = 10 + Math.random() * 30; // 10-40
+        const updateInterval = 15 + Math.floor(Math.random() * 10); // 15-24ms
+        const skillVariance = 0.05 + Math.random() * 0.1; // 0.05-0.15
+
         runner.botLoopId = setInterval(() => {
             if (runner.crashed || runner.destroyed) return;
             const obstacle = runner.horizon && runner.horizon.obstacles && runner.horizon.obstacles[0];
             if (!obstacle) return;
             const distanceToPlayer = obstacle.xPos - runner.tRex.xPos;
-            const reactionWindow = 110 + Math.random() * 20;
+            // Randomize reaction window each time
+            const reactionWindow = baseReactionWindow + (Math.random() * reactionVariance * 2 - reactionVariance);
             if (distanceToPlayer < reactionWindow && !runner.tRex.jumping && !runner.tRex.ducking) {
-                if (Math.random() < skill) {
+                // Randomize skill each jump
+                const effectiveSkill = Math.max(0, Math.min(1, skill + (Math.random() * skillVariance * 2 - skillVariance)));
+                if (Math.random() < effectiveSkill) {
                     runner.tRex.startJump(runner.currentSpeed);
                 }
             }
-        }, 18);
+        }, updateInterval);
     };
 
     // Single
