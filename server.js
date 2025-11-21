@@ -4,6 +4,7 @@ const wss = new WebSocket.Server({ port: 8080 });
 
 const rooms = {};
 const QUICK_PLAY_ROOM = 'quickplay_lobby';
+const MAX_PLAYERS_PER_ROOM = 16;
 
 console.log('Dino Royale Server started on port 8080');
 
@@ -31,6 +32,17 @@ function joinRoom(ws, roomId, playerName) {
     }
 
     createRoom(roomId);
+
+    // Check room capacity
+    if (rooms[roomId].size >= MAX_PLAYERS_PER_ROOM) {
+        ws.send(JSON.stringify({
+            type: 'ERROR',
+            message: `Room is full (max ${MAX_PLAYERS_PER_ROOM} players)`
+        }));
+        console.log(`${playerName} denied - room ${roomId} is full`);
+        return;
+    }
+
     rooms[roomId].add(ws);
     ws.roomId = roomId;
     ws.playerName = playerName || 'Anonymous';

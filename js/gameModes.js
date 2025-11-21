@@ -28,8 +28,10 @@
         roster: [],
         matchmaker: null,
         seed: null,
-        runnerMap: {} // Map server ID to runner instance
+        runnerMap: {}, // Map server ID to runner instance
+        countingDown: false
     };
+    let countdownInterval = null;
 
     // Monkey-patch Runner to support holding keys for auto-jump
     const originalOnKeyDown = Runner.prototype.onKeyDown;
@@ -502,7 +504,9 @@
                 this.socket.onmessage = (evt) => {
                     try {
                         const data = JSON.parse(evt.data);
-                        if (data.type === 'ROSTER_UPDATE') {
+                        if (data.type === 'ERROR') {
+                            if (this.onError) this.onError(data.message);
+                        } else if (data.type === 'ROSTER_UPDATE') {
                             this.onRoster(data.roster);
                         } else if (data.type === 'GAME_START') {
                             this.onGameStart(data.seed);
@@ -557,10 +561,13 @@
             minis: [],
             alive: 0,
             roster: [],
-            runnerMap: {}
+            runnerMap: {},
+            countingDown: false
         });
-        const miniGrid = document.getElementById('royale-mini-grid');
-        if (miniGrid) miniGrid.innerHTML = '';
+        ['royale-mini-left', 'royale-mini-right', 'royale-mini-bottom'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = '';
+        });
         ['royale-player-score', 'royale-rival-a-score', 'royale-rival-b-score'].forEach(id => setText(id, '0'));
         ['royale-player-state', 'royale-rival-a-state', 'royale-rival-b-state'].forEach(id => {
             const el = document.getElementById(id);
@@ -570,10 +577,32 @@
                 el.classList.add('status-alive');
             }
         });
+        if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+        }
+        const lobby = document.getElementById('royale-lobby');
+        const lobbyInput = document.getElementById('lobby-input');
+        const lobbyWaiting = document.getElementById('lobby-waiting');
+        const layout = document.getElementById('royale-game-layout');
+        const nextBtn = document.getElementById('royale-next');
+        const returnBtn = document.getElementById('royale-return');
+        const startBtn = document.getElementById('royale-start-btn');
+        const rosterList = document.getElementById('lobby-roster-list');
+        if (rosterList) rosterList.innerHTML = '';
+        if (lobby) lobby.style.display = 'flex';
+        if (lobbyInput) lobbyInput.style.display = 'block';
+        if (lobbyWaiting) lobbyWaiting.style.display = 'none';
+        if (layout) layout.style.display = 'none';
+        if (nextBtn) nextBtn.style.display = 'none';
+        if (returnBtn) returnBtn.style.display = 'none';
+        if (startBtn) startBtn.style.display = 'none';
+        setText('royale-status', 'Lobby idle');
     };
 
-    const createMiniRunner = (player, skill, controls, index, seed) => {
-        const grid = document.getElementById('royale-mini-grid');
+    const createMiniRunner = (player, skill, controls, index, seed, targetGridId) => {
+        const grid = document.getElementById(targetGridId || 'royale-mini-left');
+        if (!grid) return null;
         const slot = document.createElement('div');
         slot.className = 'mini-tile';
         const label = document.createElement('div');
@@ -616,57 +645,98 @@
 
     const pickNames = (selfName, roster) => {
         // Roster contains objects {id, name, isHost}
-        // We need to separate real players from bots if roster is small
         const others = roster.filter(p => p.name !== selfName);
 
-        const live = [{ name: selfName, id: 'me' }]; // Placeholder for self
+        const live = [{ name: selfName, id: 'me' }]; // Player
         const minis = [];
 
-        // Fill live slots (Rival A, Rival B)
-        if (others.length > 0) live.push(others[0]);
-        else live.push({ name: royaleNames[0], isBot: true });
+        // Fill rival slots with real players only
+        if (others.length > 0) live.push(others[0]); // Rival A
+        if (others.length > 1) live.push(others[1]); // Rival B
 
-        if (others.length > 1) live.push(others[1]);
-        else live.push({ name: royaleNames[1], isBot: true });
-
-        // Fill minis
-        for (let i = 2; i < others.length; i++) {
+        // Fill minis with remaining real players (up to 13)
+        for (let i = 2; i < others.length && i < 15; i++) {
             minis.push(others[i]);
-        }
-        // Fill remaining minis with bots if needed (up to 4 minis total)
-        while (minis.length < 4) {
-            minis.push({ name: royaleNames[minis.length + 2], isBot: true });
         }
 
         return { live, minis };
     };
 
-    const hydrateRoyale = (seed) => {
-        const { live, minis } = pickNames(royaleState.playerName, royaleState.roster);
+    const startAutoCountdown = () => {
+        if (royaleState.countingDown) return;
+        royaleState.countingDown = true;
+        let seconds = 10;
+        if (countdownInterval) clearInterval(countdownInterval);
 
-        setText('royale-player-label', `${live[0].name} (You)`);
-        setText('royale-rival-a-label', live[1].name);
-        setText('royale-rival-b-label', live[2].name);
+        countdownInterval = setInterval(() => {
+            setText('royale-status', `Starting in ${seconds}s...`);
+            seconds--;
+
+            if (seconds < 0) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+                royaleState.countingDown = false;
+
+                const host = royaleState.roster?.find(p => p.isHost) || royaleState.roster?.[0];
+                if (host && host.name === royaleState.playerName) {
+                    startRoyaleGame();
+                }
+            }
+        }, 1000);
+    };
+
+    const hydrateRoyale = (seed, warmup = false) => {
+        const { live, minis } = pickNames(royaleState.playerName, royaleState.roster || []);
+
+        setText('royale-player-label', live[0]?.name || 'You');
+        if (live[1]) setText('royale-rival-a-label', live[1].name || 'Rival A');
+        if (live[2]) setText('royale-rival-b-label', live[2].name || 'Rival B');
 
         // Destroy existing
         destroyRunner(royaleState.player);
         royaleState.rivals.forEach(destroyRunner);
         royaleState.minis.forEach(destroyRunner);
-        document.getElementById('royale-mini-grid').innerHTML = '';
+        ['royale-mini-left', 'royale-mini-right', 'royale-mini-bottom'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = '';
+        });
         royaleState.runnerMap = {};
 
         // Player
         royaleState.player = createRunner('royale-player', {
-            name: live[0].name,
+            name: live[0]?.name || 'You',
             rngSeed: seed,
             onScore: (score) => {
                 setText('royale-player-score', score);
-                if (royaleState.matchmaker) royaleState.matchmaker.sendUpdate({ score, crashed: false });
+                if (royaleState.matchmaker) {
+                    royaleState.matchmaker.sendUpdate({
+                        score,
+                        crashed: false,
+                        jumping: royaleState.player.tRex.jumping || false,
+                        ducking: royaleState.player.tRex.ducking || false
+                    });
+                }
             },
             onCrash: () => {
                 setText('royale-player-state', 'Down');
-                document.getElementById('royale-player-state').classList.add('status-dead');
-                if (royaleState.matchmaker) royaleState.matchmaker.sendUpdate({ score: 0, crashed: true });
+                const playerStateEl = document.getElementById('royale-player-state');
+                if (playerStateEl) playerStateEl.classList.add('status-dead');
+
+                // Send final crash update
+                if (royaleState.matchmaker) {
+                    royaleState.matchmaker.sendUpdate({ score: 0, crashed: true, jumping: false, ducking: false });
+                }
+
+                // Enter spectator mode
+                setText('royale-status', 'You crashed! Spectating rivals...');
+
+                // Check if all players are dead
+                setTimeout(() => {
+                    const allDead = [royaleState.player, ...royaleState.rivals, ...royaleState.minis].every(r => r && r.crashed);
+                    if (allDead) {
+                        handleRoyaleGameOver();
+                    }
+                }, 500);
             }
         });
 
@@ -674,6 +744,7 @@
         const botControls = buildControls([], []);
 
         const createRival = (player, hostId, scoreId, stateId, skill) => {
+            if (!player) return null;
             const runner = createRunner(hostId, {
                 name: player.name,
                 rngSeed: seed,
@@ -681,7 +752,8 @@
                 onScore: (score) => setText(scoreId, score),
                 onCrash: () => {
                     setText(stateId, 'Down');
-                    document.getElementById(stateId).classList.add('status-dead');
+                    const stateEl = document.getElementById(stateId);
+                    if (stateEl) stateEl.classList.add('status-dead');
                 }
             });
             if (player.id) {
@@ -695,29 +767,87 @@
         const rivalA = createRival(live[1], 'royale-rival-a', 'royale-rival-a-score', 'royale-rival-a-state', 0.9);
         const rivalB = createRival(live[2], 'royale-rival-b', 'royale-rival-b-score', 'royale-rival-b-state', 0.85);
 
-        royaleState.rivals = [rivalA, rivalB];
+        royaleState.rivals = [rivalA, rivalB].filter(r => r);
 
         // Minis
         royaleState.minis = [];
         minis.forEach((player, i) => {
-            const runner = createMiniRunner(player, 0.72 + i * 0.03, botControls, i, seed);
-            royaleState.minis.push(runner);
-            if (player.id) {
-                royaleState.runnerMap[player.id] = {
-                    runner,
-                    scoreId: `mini-${i}-score`,
-                    stateId: `mini-${i}-state`
-                };
+            let targetGrid = 'royale-mini-left';
+            if (i >= 5 && i < 10) targetGrid = 'royale-mini-right';
+            if (i >= 10) targetGrid = 'royale-mini-bottom';
+            const runner = createMiniRunner(player, 0.72 + i * 0.03, botControls, i, seed, targetGrid);
+            if (runner) {
+                royaleState.minis.push(runner);
+                if (player.id) {
+                    royaleState.runnerMap[player.id] = {
+                        runner,
+                        scoreId: `mini-${i}-score`,
+                        stateId: `mini-${i}-state`
+                    };
+                }
             }
         });
 
-        // Start all
-        [royaleState.player, ...royaleState.rivals, ...royaleState.minis].forEach(r => {
-            r.activated = true;
-            r.play();
-            r.tRex.startJump(r.currentSpeed);
-        });
-        setRunnerActive(royaleState.player, true);
+        // Start or warmup
+        const allRunners = [royaleState.player, ...royaleState.rivals, ...royaleState.minis].filter(r => r);
+        if (!warmup) {
+            allRunners.forEach(r => {
+                r.activated = true;
+                r.play();
+                r.tRex.startJump(r.currentSpeed);
+            });
+            setRunnerActive(royaleState.player, true);
+        } else {
+            allRunners.forEach(r => r.draw && r.draw());
+        }
+    };
+
+    const handleRoyaleGameOver = () => {
+        // Find survivor or highest scorer
+        const allRunners = [royaleState.player, ...royaleState.rivals, ...royaleState.minis].filter(r => r);
+        const survivor = allRunners.find(r => !r.crashed);
+
+        let winnerName = 'Unknown';
+        if (survivor) {
+            winnerName = survivor.name || 'A player';
+        } else {
+            // Find highest scorer
+            let maxScore = -1;
+            allRunners.forEach(r => {
+                const score = r.distanceRan || 0;
+                if (score > maxScore) {
+                    maxScore = score;
+                    winnerName = r.name || 'A player';
+                }
+            });
+        }
+
+        setText('royale-status', `Game Over! ${winnerName} wins!`);
+        const returnBtn = document.getElementById('royale-return');
+        const nextBtn = document.getElementById('royale-next');
+        if (returnBtn) returnBtn.style.display = 'inline-block';
+        if (nextBtn) nextBtn.style.display = 'inline-block';
+
+        if (returnBtn) {
+            returnBtn.onclick = () => {
+                tearDownRoyale();
+                const lobby = document.getElementById('royale-lobby');
+                const lobbyInput = document.getElementById('lobby-input');
+                const lobbyWaiting = document.getElementById('lobby-waiting');
+                const layout = document.getElementById('royale-game-layout');
+                if (layout) layout.style.display = 'none';
+                if (lobby) lobby.style.display = 'flex';
+                if (lobbyInput) lobbyInput.style.display = 'block';
+                if (lobbyWaiting) lobbyWaiting.style.display = 'none';
+                setText('royale-status', 'Lobby idle');
+            };
+        }
+
+        if (nextBtn) {
+            nextBtn.onclick = () => {
+                joinRoyale({ quick: true });
+            };
+        }
     };
 
     const joinRoyale = ({ quick = false } = {}) => {
@@ -726,40 +856,149 @@
         const roomInput = document.getElementById('room-name').value.trim() || 'Open Lobby';
         royaleState.playerName = pName;
         royaleState.roomName = quick ? 'Quick Play' : roomInput;
-        setText('royale-status', 'Connecting...');
 
-        const matchmaker = new Matchmaker((roster) => {
+        const lobby = document.getElementById('royale-lobby');
+        const lobbyInput = document.getElementById('lobby-input');
+        const lobbyWaiting = document.getElementById('lobby-waiting');
+        const layout = document.getElementById('royale-game-layout');
+        const startBtn = document.getElementById('royale-start-btn');
+        const returnBtn = document.getElementById('royale-return');
+        const nextBtn = document.getElementById('royale-next');
+
+        if (lobbyInput) lobbyInput.style.display = 'none';
+        if (returnBtn) returnBtn.style.display = 'none';
+        if (nextBtn) nextBtn.style.display = 'none';
+
+        if (quick) {
+            if (lobby) lobby.style.display = 'none';
+            if (lobbyWaiting) lobbyWaiting.style.display = 'none';
+            if (layout) layout.style.display = 'flex';
+            setText('royale-status', 'Searching for players...');
+
+            royaleState.player = createRunner('royale-player', {
+                name: pName,
+                rngSeed: 0,
+                onScore: () => {},
+                onCrash: () => {}
+            });
+            setText('royale-player-label', pName);
+        } else {
+            if (lobby) lobby.style.display = 'flex';
+            if (lobbyWaiting) lobbyWaiting.style.display = 'block';
+            if (layout) layout.style.display = 'none';
+            if (startBtn) startBtn.style.display = 'none';
+            setText('lobby-room-name', `Room: ${royaleState.roomName}`);
+            setText('lobby-status-text', 'Connecting...');
+            setText('royale-status', 'Connecting...');
+        }
+
+        const updateRoster = (roster = []) => {
             royaleState.roster = roster;
-            setText('royale-status', `Lobby: ${roster.length} players`);
-        }, (seed) => {
+            const rosterEl = document.getElementById('lobby-roster-list');
+            const isHost = roster.some(p => p.isHost && p.name === pName) || (roster[0] && roster[0].name === pName);
+
+            if (rosterEl) {
+                rosterEl.innerHTML = '';
+                roster.forEach(player => {
+                    const item = document.createElement('div');
+                    item.className = 'roster-item' + (player.name === pName ? ' is-me' : '');
+                    const role = player.isHost ? 'Host' : 'Player';
+                    item.innerHTML = `<span>${player.name}</span><span class="muted">${role}</span>`;
+                    rosterEl.appendChild(item);
+                });
+            }
+
+            if (!quick) {
+                setText('lobby-status-text', isHost ? 'You are host - start when ready.' : 'Waiting for host to start...');
+                if (startBtn) startBtn.style.display = isHost && roster.length >= 2 ? 'inline-block' : 'none';
+                setText('royale-status', `Lobby: ${roster.length} players`);
+            } else {
+                if (roster.length >= 2) {
+                    startAutoCountdown();
+                } else {
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    royaleState.countingDown = false;
+                    setText('royale-status', 'Waiting for players...');
+                }
+                if (!royaleState.countingDown) {
+                    setText('royale-status', roster.length >= 2 ? `Players found: ${roster.length}` : 'Searching for players...');
+                }
+            }
+        };
+
+        const matchmaker = new Matchmaker(updateRoster, (seed) => {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+                royaleState.countingDown = false;
+            }
             setText('royale-status', 'Game Started!');
+            if (lobby) lobby.style.display = 'none';
+            if (lobbyWaiting) lobbyWaiting.style.display = 'none';
+            if (layout) layout.style.display = 'flex';
+            if (startBtn) startBtn.style.display = 'none';
             hydrateRoyale(seed);
         }, (id, state) => {
             // Handle rival update
             const target = royaleState.runnerMap[id];
-            if (target) {
+            if (target && target.runner) {
                 if (state.crashed) {
                     if (!target.runner.crashed) {
                         target.runner.crashed = true; // Visual only
                         target.runner.tRex.startCrash();
                         setText(target.stateId, 'Down');
-                        document.getElementById(target.stateId).classList.add('status-dead');
+                        document.getElementById(target.stateId)?.classList.add('status-dead');
                     }
                 } else {
+                    // Update score
                     if (state.score !== undefined) {
                         setText(target.scoreId, state.score);
+                    }
+
+                    // Apply action states for visual feedback
+                    if (target.runner && target.runner.tRex) {
+                        // Apply jumping state
+                        if (state.jumping && !target.runner.tRex.jumping) {
+                            target.runner.tRex.startJump(target.runner.currentSpeed);
+                        }
+
+                        // Apply ducking state
+                        if (state.ducking && !target.runner.tRex.ducking) {
+                            target.runner.tRex.setDuck(true);
+                        } else if (!state.ducking && target.runner.tRex.ducking) {
+                            target.runner.tRex.setDuck(false);
+                        }
                     }
                 }
             }
         }, (err) => {
             setText('royale-status', err);
+            setText('lobby-status-text', err);
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+            royaleState.countingDown = false;
+            if (lobby) lobby.style.display = 'flex';
+            if (lobbyInput) lobbyInput.style.display = 'block';
+            if (lobbyWaiting) lobbyWaiting.style.display = 'none';
+            if (layout) layout.style.display = 'none';
         });
 
-        matchmaker.connect({ name: pName, room: roomInput, quick });
+        matchmaker.connect({ name: pName, room: royaleState.roomName, quick });
         royaleState.matchmaker = matchmaker;
     };
 
     const startRoyaleGame = () => {
+        if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+        }
+        royaleState.countingDown = false;
+        setText('royale-status', 'Starting...');
         if (royaleState.matchmaker) {
             royaleState.matchmaker.startGame();
         }
@@ -806,9 +1045,17 @@
         document.getElementById('vs-ai-start')?.addEventListener('click', startVsAi);
 
         document.getElementById('create-room')?.addEventListener('click', () => joinRoyale({ quick: false }));
-        document.getElementById('join-room')?.addEventListener('click', () => joinRoyale({ quick: false }));
         document.getElementById('royale-quick')?.addEventListener('click', () => joinRoyale({ quick: true }));
         document.getElementById('royale-start')?.addEventListener('click', startRoyaleGame);
+        document.getElementById('royale-start-btn')?.addEventListener('click', startRoyaleGame);
+        document.getElementById('royale-leave-btn')?.addEventListener('click', () => {
+            tearDownRoyale();
+        });
+        document.getElementById('debug-fill')?.addEventListener('click', () => {
+            console.log('Debug: Fill with bots');
+        });
+        document.getElementById('royale-next')?.addEventListener('click', () => joinRoyale({ quick: true }));
+        document.getElementById('royale-return')?.addEventListener('click', () => tearDownRoyale());
     };
 
     document.addEventListener('DOMContentLoaded', () => {

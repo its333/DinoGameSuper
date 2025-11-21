@@ -119,6 +119,11 @@
             backdrop-filter: blur(10px);
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
             margin-bottom: 18px;
+            position: relative;
+        }
+
+        #royale-card {
+            min-height: 620px;
         }
 
         .card-header {
@@ -237,6 +242,186 @@
             min-height: 110px;
         }
 
+        /* Lobby Overlay System */
+        .lobby-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(12, 18, 36, 0.92);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
+            padding: 8px;
+        }
+
+        .lobby-content {
+            background: #1a2236;
+            border: 1px solid var(--border);
+            padding: 32px;
+            border-radius: 18px;
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+        }
+
+        .lobby-content h3 {
+            margin: 0 0 8px;
+            font-size: 24px;
+            color: var(--accent);
+        }
+
+        .lobby-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin: 24px 0;
+            text-align: left;
+        }
+
+        .lobby-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .lobby-input-group label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .lobby-input-group input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 12px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 16px;
+        }
+
+        .lobby-actions-row {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .lobby-footer {
+            margin-top: 24px;
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .lobby-roster {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            margin: 16px 0;
+            max-height: 240px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .roster-item {
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .roster-item.is-me {
+            background: rgba(124, 243, 195, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(124, 243, 195, 0.25);
+        }
+
+        /* Surround Layout System */
+        .royale-layout {
+            display: flex;
+            gap: 16px;
+            align-items: stretch;
+            margin-top: 16px;
+            min-height: 420px;
+        }
+
+        .mini-sidebar {
+            width: 180px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .mini-sidebar .mini-tile .runner-host {
+            min-height: 110px;
+        }
+
+        .center-stage {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .center-stage .rivals-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .mini-bar-bottom {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            min-height: 120px;
+        }
+
+        .mini-bar-bottom .mini-tile {
+            min-width: 160px;
+            flex-shrink: 0;
+        }
+
+        /* Buttons */
+        .primary-btn {
+            background: linear-gradient(135deg, #13c2ad, #6ee7b7);
+            color: #0c1224;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(19, 194, 173, 0.25);
+            border: none;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1000px) {
+            .royale-layout {
+                flex-direction: column;
+            }
+
+            .mini-sidebar {
+                width: 100%;
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            }
+
+            .mini-bar-bottom {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                overflow: visible;
+            }
+        }
+
         .lobby {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -288,79 +473,69 @@
         <section class="hero">
             <div class="title-block">
                 <h1>Dino Game Super Multiplayer</h1>
-                <p>Chrome Dino rebuilt for solo runs, couch duels, and online battle royale.</p>
+                <p>Chrome Dino rebuilt for solo runs,
+                    couch duels,
+                    and online battle royale.</p>
             </div>
-            <div class="tab-buttons">
-                <button class="ghost active" data-mode="single">Single Player</button>
-                <button class="ghost" data-mode="local-2p">2 Player</button>
-                <button class="ghost" data-mode="vs-ai">VS AI</button>
-                <button class="ghost" data-mode="royale">Battle Royale</button>
-            </div>
+            <div class="tab-buttons"><button class="ghost active" data-mode="single">Single Player</button><button
+                    class="ghost" data-mode="local-2p">2 Player</button><button class="ghost" data-mode="vs-ai">VS
+                    AI</button><button class="ghost" data-mode="royale">Battle Royale</button></div>
         </section>
-
         <section class="mode-pane active" id="pane-single">
             <div class="mode-card">
                 <div class="card-header">
                     <div>
                         <h2>Single Player</h2>
-                        <p>Authentic runner right on launch. Space or Up to jump, Down to duck.</p>
+                        <p>Authentic runner right on launch. Space or Up to jump,
+                            Down to duck.</p>
                     </div>
                     <div class="badge" id="single-status">Ready to run</div>
                 </div>
                 <div class="stage">
                     <div class="runner-host" id="single-runner"></div>
-                    <div class="meta-row">
-                        <span>Score: <strong id="single-score">0</strong></span>
-                        <span class="muted">Controls: Space / Up</span>
-                    </div>
+                    <div class="meta-row"><span>Score: <strong id="single-score">0</strong></span><span
+                            class="muted">Controls: Space / Up</span></div>
                 </div>
-                <div class="divider"></div>
-                <button id="single-reset">Reset Single</button>
+                <div class="divider"></div><button id="single-reset">Reset Single</button>
             </div>
         </section>
-
         <section class="mode-pane" id="pane-local-2p">
             <div class="mode-card">
                 <div class="card-header">
                     <div>
                         <h2>Local 2 Player</h2>
-                        <p>Stacked lanes, same keyboard. First to fall loses.</p>
+                        <p>Stacked lanes,
+                            same keyboard. First to fall loses.</p>
                     </div>
                     <div class="badge" id="local-status">Ready</div>
                 </div>
                 <div class="stage">
                     <div class="stacked-lanes">
                         <div>
-                            <div class="lane-label"><strong>Player 1</strong><span class="muted">Jump: W Duck:
-                                    S</span></div>
-                            <div class="runner-host" id="local-p1"></div>
-                            <div class="meta-row">
-                                <span>Score: <strong id="local-p1-score">0</strong></span>
-                                <span id="local-p1-state" class="status-alive">Alive</span>
+                            <div class="lane-label"><strong>Player 1</strong><span class="muted">Jump: W Duck: S</span>
                             </div>
+                            <div class="runner-host" id="local-p1"></div>
+                            <div class="meta-row"><span>Score: <strong id="local-p1-score">0</strong></span><span
+                                    id="local-p1-state" class="status-alive">Alive</span></div>
                         </div>
                         <div>
                             <div class="lane-label"><strong>Player 2</strong><span class="muted">Jump: Up Duck:
                                     Down</span></div>
                             <div class="runner-host" id="local-p2"></div>
-                            <div class="meta-row">
-                                <span>Score: <strong id="local-p2-score">0</strong></span>
-                                <span id="local-p2-state" class="status-alive">Alive</span>
-                            </div>
+                            <div class="meta-row"><span>Score: <strong id="local-p2-score">0</strong></span><span
+                                    id="local-p2-state" class="status-alive">Alive</span></div>
                         </div>
                     </div>
                 </div>
-                <div class="divider"></div>
-                <button id="local-reset">Reset Duel</button>
+                <div class="divider"></div><button id="local-reset">Reset Duel</button>
             </div>
         </section>
-
         <section class="mode-pane" id="pane-vs-ai">
             <div class="mode-card" id="vs-ai-card">
                 <div class="card-header">
                     <div>
                         <h2>VS AI (Offline)</h2>
-                        <p>Race against computer-controlled bots. Be the last dino standing!</p>
+                        <p>Race against computer-controlled bots. Be the last dino standing !</p>
                     </div>
                     <div class="badge" id="vs-ai-status">Press Start to begin</div>
                 </div>
@@ -368,103 +543,131 @@
                     <div class="player-full">
                         <div class="lane-label"><strong>You</strong><span class="muted">Space / Up</span></div>
                         <div class="runner-host" id="vs-ai-player"></div>
-                        <div class="meta-row">
-                            <span>Score: <strong id="vs-ai-player-score">0</strong></span>
-                            <span id="vs-ai-player-state" class="status-alive">Alive</span>
-                        </div>
+                        <div class="meta-row"><span>Score: <strong id="vs-ai-player-score">0</strong></span><span
+                                id="vs-ai-player-state" class="status-alive">Alive</span></div>
                     </div>
                     <div class="rivals-grid">
                         <div>
                             <div class="lane-label"><strong>Bot 1</strong><span class="muted">CPU</span></div>
                             <div class="runner-host" id="vs-ai-bot-1"></div>
-                            <div class="meta-row">
-                                <span>Score: <strong id="vs-ai-bot-1-score">0</strong></span>
-                                <span id="vs-ai-bot-1-state" class="status-alive">Alive</span>
-                            </div>
+                            <div class="meta-row"><span>Score: <strong id="vs-ai-bot-1-score">0</strong></span><span
+                                    id="vs-ai-bot-1-state" class="status-alive">Alive</span></div>
                         </div>
                         <div>
                             <div class="lane-label"><strong>Bot 2</strong><span class="muted">CPU</span></div>
                             <div class="runner-host" id="vs-ai-bot-2"></div>
-                            <div class="meta-row">
-                                <span>Score: <strong id="vs-ai-bot-2-score">0</strong></span>
-                                <span id="vs-ai-bot-2-state" class="status-alive">Alive</span>
-                            </div>
+                            <div class="meta-row"><span>Score: <strong id="vs-ai-bot-2-score">0</strong></span><span
+                                    id="vs-ai-bot-2-state" class="status-alive">Alive</span></div>
                         </div>
                     </div>
                 </div>
                 <div class="divider"></div>
-                <button id="vs-ai-start">Start Game</button>
+                <button id="vs-ai-start">Start Battle</button>
             </div>
         </section>
-
         <section class="mode-pane" id="pane-royale">
             <div class="mode-card" id="royale-card">
                 <div class="card-header">
                     <div>
                         <h2>Battle Royale (Online)</h2>
-                        <p>Matchmake with real players via rooms or quick play. Up to 3 live lanes shown; the rest
-                            appear in mini tiles.</p>
+                        <p>Matchmake with real players via rooms or quick play.</p>
                     </div>
                     <div class="badge" id="royale-status">Lobby idle</div>
                 </div>
-                <div class="lobby">
-                    <input id="player-name" type="text" placeholder="Your name" value="You">
-                    <input id="room-name" type="text" placeholder="Room name (creates if none)" value="Neon Lobby">
-                    <button id="create-room">Create / Join Room</button>
-                    <button id="join-room" class="secondary">Join by Name</button>
-                    <button id="royale-quick" class="ghost">Quick Play</button>
+                <!-- Dedicated Lobby Overlay -->
+                <div class="lobby-overlay" id="royale-lobby">
+                    <!-- Initial Input Screen -->
+                    <div class="lobby-content" id="lobby-input">
+                        <h3>Join the Battle</h3>
+                        <p class="muted">Enter your name and a room ID to start.</p>
+                        <div class="lobby-form">
+                            <div class="lobby-input-group">
+                                <label>Your Name</label>
+                                <input id="player-name" type="text" placeholder="Enter name" value="You">
+                            </div>
+                            <div class="lobby-input-group">
+                                <label>Room Name</label>
+                                <input id="room-name" type="text" placeholder="Room ID" value="Neon Lobby">
+                            </div>
+                        </div>
+                        <div class="lobby-actions-row">
+                            <button id="create-room" class="primary-btn">Join Room</button>
+                            <button id="royale-quick" class="ghost">Quick Play</button>
+                        </div>
+                        <div style="margin-top: 8px;">
+                            <button id="debug-fill" class="secondary" style="font-size: 12px; padding: 4px 8px;">Debug:
+                                Fill Bots</button>
+                        </div>
+                        <div class="lobby-footer muted">Up to 16 players – Last Dino Standing wins</div>
+                    </div>
+                    <!-- Waiting Room (for Custom Rooms only) -->
+                    <div class="lobby-content" id="lobby-waiting" style="display: none;">
+                        <h3>Waiting for Players...</h3>
+                        <p class="muted" id="lobby-room-name">Room: Neon Lobby</p>
+                        <div class="lobby-roster" id="lobby-roster-list">
+                            <!-- Roster items will be dynamically populated -->
+                        </div>
+                        <div class="lobby-actions-row">
+                            <button id="royale-start-btn" class="primary-btn" style="display: none;">Start Game</button>
+                            <button id="royale-leave-btn" class="ghost">Leave</button>
+                        </div>
+                        <div class="lobby-footer muted" id="lobby-status-text">Waiting for host to start...</div>
+                    </div>
                 </div>
-                <div class="muted">Space or Up to jump in your lane. Rivals are streamed from the lobby; mini tiles show
-                    overflow players. If server is unreachable, bots fill the grid so you can still play.</div>
-                <div class="stage">
-                    <div class="player-full">
-                        <div class="lane-label"><strong id="royale-player-label">You</strong><span class="muted">Space /
-                                Up</span></div>
-                        <div class="runner-host" id="royale-player"></div>
-                        <div class="meta-row">
-                            <span>Score: <strong id="royale-player-score">0</strong></span>
-                            <span id="royale-player-state" class="status-alive">Alive</span>
+                <!-- Game Layout (Hidden by default until game starts) -->
+                <div class="royale-layout" id="royale-game-layout" style="display: none;">
+                    <!-- Left Mini Sidebar (Vertical) -->
+                    <div class="mini-sidebar left" id="royale-mini-left"></div>
+                    <!-- Center Stage -->
+                    <div class="center-stage">
+                        <!-- Player at Top (Full Size) -->
+                        <div class="player-full">
+                            <div class="lane-label"><strong id="royale-player-label">You</strong><span
+                                    class="muted">Space / Up</span></div>
+                            <div class="runner-host" id="royale-player"></div>
+                            <div class="meta-row"><span>Score: <strong id="royale-player-score">0</strong></span><span
+                                    id="royale-player-state" class="status-alive">Alive</span></div>
                         </div>
-                    </div>
-                    <div class="rivals-grid">
-                        <div>
-                            <div class="lane-label"><strong id="royale-rival-a-label">Rival A</strong><span
-                                    class="muted">Live</span></div>
-                            <div class="runner-host" id="royale-rival-a"></div>
-                            <div class="meta-row">
-                                <span>Score: <strong id="royale-rival-a-score">0</strong></span>
-                                <span id="royale-rival-a-state" class="status-alive">Alive</span>
+                        <!-- Rivals in Middle (2 side-by-side) -->
+                        <div class="rivals-grid">
+                            <div>
+                                <div class="lane-label"><strong id="royale-rival-a-label">Rival A</strong><span
+                                        class="muted">Live</span></div>
+                                <div class="runner-host" id="royale-rival-a"></div>
+                                <div class="meta-row"><span>Score: <strong id="royale-rival-a-score">0</strong></span><span
+                                        id="royale-rival-a-state" class="status-alive">Alive</span></div>
+                            </div>
+                            <div>
+                                <div class="lane-label"><strong id="royale-rival-b-label">Rival B</strong><span
+                                        class="muted">Live</span></div>
+                                <div class="runner-host" id="royale-rival-b"></div>
+                                <div class="meta-row"><span>Score: <strong id="royale-rival-b-score">0</strong></span><span
+                                        id="royale-rival-b-state" class="status-alive">Alive</span></div>
                             </div>
                         </div>
-                        <div>
-                            <div class="lane-label"><strong id="royale-rival-b-label">Rival B</strong><span
-                                    class="muted">Live</span></div>
-                            <div class="runner-host" id="royale-rival-b"></div>
-                            <div class="meta-row">
-                                <span>Score: <strong id="royale-rival-b-score">0</strong></span>
-                                <span id="royale-rival-b-state" class="status-alive">Alive</span>
-                            </div>
-                        </div>
+                        <!-- Bottom Mini Bar (Horizontal) -->
+                        <div class="mini-bar-bottom" id="royale-mini-bottom"></div>
                     </div>
-                    <div class="mini-grid" id="royale-mini-grid"></div>
+                    <!-- Right Mini Sidebar (Vertical) -->
+                    <div class="mini-sidebar right" id="royale-mini-right"></div>
                 </div>
                 <div class="divider"></div>
-                <button id="royale-start">Start Battle</button>
+                <button id="royale-start" style="display: none;">Start Battle</button>
+                <button id="royale-next" class="primary-btn" style="display: none;">Next Match</button>
+                <button id="royale-return" class="secondary" style="display: none;">Return to Lobby</button>
             </div>
         </section>
     </div>
 
     <template id="audio-resources">
         <audio id="offline-sound-press"
-            src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio>
-        <audio id="offline-sound-hit"
-            src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio>
-        <audio id="offline-sound-reached"
-            src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio>
-    </template>
-    <img id="offline-resources-1x" class="sprite" src="assets/offline-sprite-1x.png" alt="runner sprite sheet 1x">
-    <img id="offline-resources-2x" class="sprite" src="assets/offline-sprite-2x.png" alt="runner sprite sheet 2x">
-
+            src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio><audio
+            id="offline-sound-hit"
+            src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio><audio
+            id="offline-sound-reached"
+            src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="></audio></template><img
+        id="offline-resources-1x" class="sprite" src="assets/offline-sprite-1x.png" alt="runner sprite sheet 1x"><img
+        id="offline-resources-2x" class="sprite" src="assets/offline-sprite-2x.png" alt="runner sprite sheet 2x">
     <script src="js/ReferenceThisForDinoGame.js"></script>
     <script src="js/gameModes.js"></script>
 </body>

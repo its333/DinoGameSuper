@@ -1,0 +1,430 @@
+Battle Royale UX Feature Restoration
+Restore all Battle Royale features that were lost during file corruption and manual reversion. This includes the lobby
+overlay system, Surround layout, Quick Play flow improvements, and additional UX enhancements.
+
+User Review Required
+IMPORTANT
+
+Layout Changes: The Battle Royale section will change from a simple grid layout to a "Surround" layout with:
+
+Player positioned at the top (full-size)
+Rivals in the middle (2 side-by-side)
+Mini-players distributed across left sidebar, right sidebar, and bottom bar
+IMPORTANT
+
+Lobby Flow: The lobby experience will change significantly:
+
+Custom Rooms: Show lobby overlay → waiting room → game starts
+Quick Play: Show lobby overlay → skip waiting room → go directly to game screen → auto-start countdown when 2+ players
+join
+Proposed Changes
+1. HTML Structure (
+index.html
+)
+[MODIFY] Battle Royale Section
+Add CSS for Lobby Overlay and Surround Layout (inside <style>
+    tag):
+
+    /* Lobby Overlay System */
+    .lobby-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(12, 18, 36, 0.95);
+        backdrop-filter: blur(8px);
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 16px;
+    }
+
+    .lobby-content {
+        background: #1a2236;
+        border: 1px solid var(--border);
+        padding: 32px;
+        border-radius: 24px;
+        width: 100%;
+        max-width: 420px;
+        text-align: center;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    }
+
+    .lobby-content h3 {
+        margin: 0 0 8px;
+        font-size: 24px;
+        color: var(--accent);
+    }
+
+    .lobby-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin: 24px 0;
+        text-align: left;
+    }
+
+    .lobby-input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .lobby-input-group label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        font-weight: 700;
+    }
+
+    .lobby-input-group input {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 12px;
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 16px;
+    }
+
+    .lobby-actions-row {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+    }
+
+    .primary-btn {
+        flex: 2;
+    }
+
+    .lobby-footer {
+        margin-top: 24px;
+        font-size: 12px;
+        opacity: 0.6;
+    }
+
+    .lobby-roster {
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        margin: 16px 0;
+        max-height: 200px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .roster-item {
+        padding: 8px 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 6px;
+        font-size: 14px;
+        text-align: left;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .roster-item.is-me {
+        background: rgba(124, 243, 195, 0.1);
+        color: var(--accent);
+        border: 1px solid rgba(124, 243, 195, 0.2);
+    }
+
+    /* Surround Layout System */
+    .royale-layout {
+        display: flex;
+        gap: 16px;
+        align-items: stretch;
+        margin-top: 16px;
+        min-height: 400px;
+    }
+
+    .mini-sidebar {
+        width: 180px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .center-stage {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .mini-bar-bottom {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        min-height: 120px;
+    }
+
+    .mini-bar-bottom .mini-tile {
+        min-width: 160px;
+        flex-shrink: 0;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1000px) {
+        .royale-layout {
+            flex-direction: column;
+        }
+
+        .mini-sidebar {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        }
+
+        .mini-bar-bottom {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            overflow: visible;
+        }
+    }
+
+    Replace Battle Royale HTML Section (inside #pane-royale): Remove the current simple lobby/grid structure and replace with: <section class="mode-pane" id="pane-royale"><div class="mode-card" id="royale-card"><div class="card-header"><div><h2>Battle Royale (Online)</h2><p>Matchmake with real players via rooms or quick play.</p></div><div class="badge" id="royale-status">Lobby idle</div></div>< !-- Dedicated Lobby Overlay --><div class="lobby-overlay" id="royale-lobby">< !-- Initial Input Screen --><div class="lobby-content" id="lobby-input"><h3>Join the Battle</h3><p class="muted">Enter your name and a room ID to start.</p><div class="lobby-form"><div class="lobby-input-group"><label>Your Name</label><input id="player-name" type="text" placeholder="Enter name" value="You"></div><div class="lobby-input-group"><label>Room Name</label><input id="room-name" type="text" placeholder="Room ID" value="Neon Lobby"></div></div><div class="lobby-actions-row"><button id="create-room" class="primary-btn">Join Room</button><button id="royale-quick" class="ghost">Quick Play</button></div><div style="margin-top: 8px;"><button id="debug-fill" class="secondary" style="font-size: 12px; padding: 4px 8px;">Debug: Fill Bots</button></div><div class="lobby-footer muted">Up to 16 players • Last Dino Standing wins </div></div>< !-- Waiting Room (for Custom Rooms only) --><div class="lobby-content" id="lobby-waiting" style="display: none;"><h3>Waiting for Players...</h3><p class="muted" id="lobby-room-name">Room: Neon Lobby</p><div class="lobby-roster" id="lobby-roster-list">< !-- Roster items will be dynamically populated --></div><div class="lobby-actions-row"><button id="royale-start-btn" class="primary-btn" style="display: none;">Start Game</button><button id="royale-leave-btn" class="ghost">Leave</button></div><div class="lobby-footer muted" id="lobby-status-text">Waiting for host to start... </div></div></div>< !-- Game Layout (Hidden by default until game starts) --><div class="royale-layout" id="royale-game-layout" style="display: none;">< !-- Left Mini Sidebar (Vertical) --><div class="mini-sidebar left" id="royale-mini-left"></div>< !-- Center Stage --><div class="center-stage">< !-- Player at Top (Full Size) --><div class="player-full"><div class="lane-label"><strong id="royale-player-label">You</strong><span class="muted">Space / Up</span></div><div class="runner-host" id="royale-player"></div><div class="meta-row"><span>Score: <strong id="royale-player-score">0</strong></span><span id="royale-player-state" class="status-alive">Alive</span></div></div>< !-- Rivals in Middle (2 side-by-side) --><div class="rivals-grid"><div><div class="lane-label"><strong id="royale-rival-a-label">Rival A</strong><span class="muted">Live</span></div><div class="runner-host" id="royale-rival-a"></div><div class="meta-row"><span>Score: <strong id="royale-rival-a-score">0</strong></span><span id="royale-rival-a-state" class="status-alive">Alive</span></div></div><div><div class="lane-label"><strong id="royale-rival-b-label">Rival B</strong><span class="muted">Live</span></div><div class="runner-host" id="royale-rival-b"></div><div class="meta-row"><span>Score: <strong id="royale-rival-b-score">0</strong></span><span id="royale-rival-b-state" class="status-alive">Alive</span></div></div></div>< !-- Bottom Mini Bar (Horizontal) --><div class="mini-bar-bottom" id="royale-mini-bottom"></div></div>< !-- Right Mini Sidebar (Vertical) --><div class="mini-sidebar right" id="royale-mini-right"></div></div><div class="divider"></div><button id="royale-start" style="display: none;">Start Battle</button><button id="royale-next" class="primary-btn" style="display: none;">Next Match</button><button id="royale-return" class="secondary" style="display: none;">Return to Lobby</button></div></section>2. JavaScript Logic (js/gameModes.js) [MODIFY] Battle Royale Functions Update joinRoyale function to handle Quick Play flow: const joinRoyale=({
+        quick=false
+    }
+
+    = {})=> {
+        tearDownRoyale();
+        const pName=document.getElementById('player-name').value.trim() || 'You';
+        const roomInput=document.getElementById('room-name').value.trim() || 'Open Lobby';
+        royaleState.playerName=pName;
+        royaleState.roomName=quick ? 'Quick Play': roomInput;
+        // UI Transition
+        document.getElementById('lobby-input').style.display='none';
+
+        if (quick) {
+            // Quick Play: Skip waiting room, go directly to game layout
+            document.getElementById('royale-lobby').style.display='none';
+            document.getElementById('royale-game-layout').style.display='flex';
+            document.getElementById('royale-return').style.display='none';
+            document.getElementById('royale-next').style.display='none';
+
+            // Initialize self in warmup mode (no seed yet)
+            royaleState.player=createRunner('royale-player', {
+                name: pName, // No "(You)" suffix
+
+                rngSeed: 0,
+                onScore: ()=> {}
+
+                ,
+                onCrash: ()=> {}
+            });
+        setText('royale-player-label', pName); // Clean name display
+        setText('royale-status', 'Searching for players...');
+    }
+
+    else {
+        // Custom Room: Show waiting room
+        document.getElementById('lobby-waiting').style.display='block';
+
+        setText('lobby-room-name', `Room: $ {
+                royaleState.roomName
+            }
+
+            `);
+        setText('lobby-status-text', 'Connecting...');
+        setText('royale-status', 'Connecting...');
+    }
+
+    // ... (rest of matchmaker initialization)
+    }
+
+    ;
+    Add Auto-Start Countdown for Quick Play: let countdownInterval=null;
+
+    const startAutoCountdown=()=> {
+        if (royaleState.countingDown) return;
+        royaleState.countingDown=true;
+        let seconds=10;
+        if (countdownInterval) clearInterval(countdownInterval);
+
+        countdownInterval=setInterval(()=> {
+                setText('royale-status', `Starting in $ {
+                        seconds
+                    }
+
+                    s...`);
+                seconds--;
+
+                if (seconds < 0) {
+                    clearInterval(countdownInterval);
+
+                    // Only host sends start signal
+                    if (royaleState.roster && royaleState.roster[0].name===royaleState.playerName) {
+                        startRoyaleGame();
+                    }
+                }
+            }
+
+            , 1000);
+    }
+
+    ;
+
+    Update hydrateRoyale function to distribute mini-players: const hydrateRoyale=(seed, warmup=false)=> {
+        const {
+            live,
+            minis
+        }
+
+        =pickNames(royaleState.playerName, royaleState.roster || []);
+        // Set labels (no "(You)" suffix)
+        setText('royale-player-label', live[0].name);
+        if (live[1]) setText('royale-rival-a-label', live[1].name);
+        if (live[2]) setText('royale-rival-b-label', live[2].name);
+        // Clear existing mini-players
+        document.getElementById('royale-mini-left').innerHTML='';
+        document.getElementById('royale-mini-right').innerHTML='';
+        document.getElementById('royale-mini-bottom').innerHTML='';
+        // ... (create player and rivals)
+        // Distribute minis across sidebars
+        royaleState.minis=[];
+
+        minis.forEach((player, i)=> {
+                let targetGrid='royale-mini-left';
+                if (i >=5 && i < 10) targetGrid='royale-mini-right';
+                if (i >=10) targetGrid='royale-mini-bottom';
+                const runner=createMiniRunner(player, 0.72 + i * 0.03, botControls, i, seed, targetGrid);
+                royaleState.minis.push(runner);
+                // ... (register in runnerMap)
+            });
+
+        // Start or show warmup
+        if ( !warmup) {
+
+            // Start all runners
+            [royaleState.player,
+            ...royaleState.rivals,
+            ...royaleState.minis].forEach(r=> {
+                    if (r) {
+                        r.activated=true;
+                        r.play();
+                        r.tRex.startJump(r.currentSpeed);
+                    }
+                });
+        }
+
+        else {
+
+            // Warmup: just draw initial frames
+            [royaleState.player,
+            ...royaleState.rivals,
+            ...royaleState.minis].forEach(r=> {
+                    if (r) r.draw();
+                });
+        }
+    }
+
+    ;
+
+    Update createMiniRunner function to accept target grid: const createMiniRunner=(player, skill, controls, index, seed, targetGridId)=> {
+        const grid=document.getElementById(targetGridId || 'royale-mini-left');
+        // ... (rest of function remains same)
+    }
+
+    ;
+
+    Update handleRoyaleGameOver function to show Next Match button: const handleRoyaleGameOver=()=> {
+
+        // ... (find winner logic)
+        setText('royale-status', `🏆 Game Over ! $ {
+                winnerName
+            }
+
+            wins !`);
+        document.getElementById('royale-return').style.display='inline-block';
+        document.getElementById('royale-next').style.display='inline-block';
+
+        // Bind button handlers
+        document.getElementById('royale-return').onclick=()=> {
+            tearDownRoyale();
+            document.getElementById('royale-game-layout').style.display='none';
+            document.getElementById('royale-lobby').style.display='flex';
+            document.getElementById('lobby-input').style.display='block';
+            document.getElementById('lobby-waiting').style.display='none';
+            setText('royale-status', 'Lobby idle');
+        }
+
+        ;
+
+        document.getElementById('royale-next').onclick=()=> {
+            joinRoyale({
+                quick: true
+            });
+    }
+
+    ;
+    }
+
+    ;
+
+    Update bindUI function to wire new buttons: const bindUI=()=> {
+
+        // ... (existing bindings)
+        // Lobby buttons
+        document.getElementById('create-room')?.addEventListener('click', ()=> joinRoyale({
+                quick: false
+            }));
+
+    document.getElementById('royale-quick')?.addEventListener('click', ()=> joinRoyale({
+            quick: true
+        }));
+
+    // Waiting room buttons
+    document.getElementById('royale-start-btn')?.addEventListener('click', startRoyaleGame);
+
+    document.getElementById('royale-leave-btn')?.addEventListener('click', ()=> {
+            tearDownRoyale();
+            document.getElementById('royale-lobby').style.display='flex';
+            document.getElementById('lobby-input').style.display='block';
+            document.getElementById('lobby-waiting').style.display='none';
+            setText('royale-status', 'Lobby idle');
+        });
+
+    // Debug fill button
+    document.getElementById('debug-fill')?.addEventListener('click', ()=> {
+            // TODO: Implement bot-filling logic
+            console.log('Debug: Fill with bots');
+        });
+    }
+
+    ;
+
+    Update tearDownRoyale function to reset lobby state: const tearDownRoyale=()=> {
+        // ... (existing cleanup)
+        // Reset lobby UI
+        document.getElementById('royale-lobby').style.display='flex';
+        document.getElementById('lobby-input').style.display='block';
+        document.getElementById('lobby-waiting').style.display='none';
+        document.getElementById('royale-game-layout').style.display='none';
+
+        // Clear countdown
+        if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval=null;
+        }
+
+        royaleState.countingDown=false;
+    }
+
+    ;
+    Verification Plan Automated Tests None - this is primarily UI/UX work. Manual Verification Custom Room Flow: Click "Battle Royale" tab Enter name and room ID Click "Join Room"
+    Verify: Lobby overlay shows → Waiting room appears → Roster updates → Host can start game Quick Play Flow: Click "Battle Royale" tab Enter name Click "Quick Play"
+    Verify: Lobby overlay shows → Skip waiting room → Go directly to game screen → Auto-countdown starts when 2+players Surround Layout: In a multi-player game,
+    verify: Player is at the top (full-size) 2 rivals in the middle (side-by-side) Mini-players distributed across left sidebar (players 4-8),
+    right sidebar (players 9-13),
+    bottom bar (players 14+) Name Display: Verify player name shows as entered (e.g. "Alice") without "(You)" suffix Verify rival names show cleanly Next Match Button: After game over,
+    verify "Next Match" button appears Click it and verify it starts a new Quick Play session Debug Fill Button: Verify "Debug: Fill Bots" button is visible in lobby Click it (should log to console or populate with NPCs) Responsive Design: Resize browser window to < 1000px width Verify sidebars stack vertically Verify mini-bars switch to grid layout
