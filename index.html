@@ -124,6 +124,9 @@
 
         #royale-card {
             min-height: 620px;
+            max-width: 1360px;
+            width: min(1360px, calc(100vw - 48px));
+            margin: 0 auto;
         }
 
         .card-header {
@@ -218,28 +221,6 @@
 
         .player-full {
             margin-bottom: 12px;
-        }
-
-        .mini-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 10px;
-        }
-
-        .mini-runner {
-            transform: scale(0.78);
-            transform-origin: top left;
-        }
-
-        .mini-tile {
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 6px;
-            background: rgba(255, 255, 255, 0.03);
-        }
-
-        .mini-tile .runner-host {
-            min-height: 110px;
         }
 
         /* Lobby Overlay System */
@@ -348,25 +329,65 @@
             border: 1px solid rgba(124, 243, 195, 0.25);
         }
 
-        /* Surround Layout System */
-        .royale-layout {
-            display: flex;
-            gap: 16px;
-            align-items: stretch;
-            margin-top: 16px;
-            min-height: 420px;
+        /* Royale Surround Layout (isolated to battle royale) */
+        /* Allow royale pane to use full viewport width without affecting other modes */
+        #pane-royale {
+            width: 100vw;
+            margin-left: calc(50% - 50vw);
         }
 
-        .mini-sidebar {
-            width: 180px;
+        .royale-shell {
+            display: grid;
+            grid-template-columns: 170px 1fr 170px;
+            gap: 12px;
+            margin: 14px auto 0;
+            align-items: start;
+            max-width: 1360px;
+            width: 100%;
+        }
+
+        .royale-shell.only-left {
+            grid-template-columns: 170px 1fr;
+        }
+
+        .royale-shell.only-right {
+            grid-template-columns: 1fr 170px;
+        }
+
+        .royale-shell.no-rails {
+            grid-template-columns: 1fr;
+        }
+
+        .royale-main {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            flex-shrink: 0;
+            gap: 12px;
+            min-height: 560px;
         }
 
-        .mini-sidebar .mini-tile .runner-host {
-            min-height: 110px;
+        .royale-layout {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+        }
+
+        .mini-rail {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .mini-row {
+            display: grid;
+            gap: 10px;
+        }
+
+        .mini-row-top {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .mini-row-bottom {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
         }
 
         .center-stage {
@@ -378,20 +399,38 @@
         }
 
         .center-stage .rivals-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
-        .mini-bar-bottom {
-            display: flex;
-            gap: 8px;
-            overflow-x: auto;
-            padding-bottom: 4px;
-            min-height: 120px;
+        /* Size boosts for Royale lanes */
+        #royale-card .player-full .runner-host {
+            min-height: 260px;
         }
 
-        .mini-bar-bottom .mini-tile {
-            min-width: 160px;
-            flex-shrink: 0;
+        #royale-card .rivals-grid .runner-host {
+            min-height: 200px;
+        }
+
+        .mini-runner {
+            transform: scale(0.78);
+            transform-origin: top left;
+        }
+
+        .mini-tile {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            min-height: 140px;
+        }
+
+        .mini-tile.placeholder {
+            opacity: 0.35;
+            border-style: dashed;
+        }
+
+        .mini-tile .runner-host {
+            min-height: 110px;
         }
 
         /* Buttons */
@@ -405,20 +444,28 @@
 
         /* Responsive Design */
         @media (max-width: 1000px) {
+            .royale-shell {
+                grid-template-columns: 1fr;
+            }
+
             .royale-layout {
                 flex-direction: column;
             }
 
-            .mini-sidebar {
-                width: 100%;
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            .mini-rail {
+                flex-direction: row;
+                flex-wrap: wrap;
+                justify-content: center;
             }
 
-            .mini-bar-bottom {
-                display: grid;
+            .mini-rail .mini-tile {
+                flex: 1 1 160px;
+                min-width: 150px;
+            }
+
+            .mini-row-top,
+            .mini-row-bottom {
                 grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-                overflow: visible;
             }
         }
 
@@ -615,41 +662,49 @@
                     </div>
                 </div>
                 <!-- Game Layout (Hidden by default until game starts) -->
-                <div class="royale-layout" id="royale-game-layout" style="display: none;">
-                    <!-- Left Mini Sidebar (Vertical) -->
-                    <div class="mini-sidebar left" id="royale-mini-left"></div>
-                    <!-- Center Stage -->
-                    <div class="center-stage">
-                        <!-- Player at Top (Full Size) -->
-                        <div class="player-full">
-                            <div class="lane-label"><strong id="royale-player-label">You</strong><span
-                                    class="muted">Space / Up</span></div>
-                            <div class="runner-host" id="royale-player"></div>
-                            <div class="meta-row"><span>Score: <strong id="royale-player-score">0</strong></span><span
-                                    id="royale-player-state" class="status-alive">Alive</span></div>
-                        </div>
-                        <!-- Rivals in Middle (2 side-by-side) -->
-                        <div class="rivals-grid">
-                            <div>
-                                <div class="lane-label"><strong id="royale-rival-a-label">Rival A</strong><span
-                                        class="muted">Live</span></div>
-                                <div class="runner-host" id="royale-rival-a"></div>
-                                <div class="meta-row"><span>Score: <strong id="royale-rival-a-score">0</strong></span><span
-                                        id="royale-rival-a-state" class="status-alive">Alive</span></div>
+                <div class="royale-shell" id="royale-game-layout" style="display: none;">
+                    <div class="mini-rail" id="royale-mini-left"></div>
+                    <div class="royale-main">
+                        <div class="royale-layout">
+                            <div class="center-stage">
+                                <!-- Player at Top (Full Size) -->
+                                <div class="player-full">
+                                    <div class="lane-label"><strong id="royale-player-label">You</strong><span
+                                            class="muted">Space / Up</span></div>
+                                    <div class="runner-host" id="royale-player"></div>
+                                    <div class="meta-row"><span>Score: <strong id="royale-player-score">0</strong></span><span
+                                            id="royale-player-state" class="status-alive">Alive</span></div>
+                                </div>
+                                <!-- Rivals in Middle (2 side-by-side) -->
+                                <div class="rivals-grid">
+                                    <div>
+                                        <div class="lane-label"><strong id="royale-rival-a-label">Rival A</strong><span
+                                                class="muted">Live</span></div>
+                                        <div class="runner-host" id="royale-rival-a"></div>
+                                        <div class="meta-row"><span>Score: <strong id="royale-rival-a-score">0</strong></span><span
+                                                id="royale-rival-a-state" class="status-alive">Alive</span></div>
+                                    </div>
+                                    <div>
+                                        <div class="lane-label"><strong id="royale-rival-b-label">Rival B</strong><span
+                                                class="muted">Live</span></div>
+                                        <div class="runner-host" id="royale-rival-b"></div>
+                                        <div class="meta-row"><span>Score: <strong id="royale-rival-b-score">0</strong></span><span
+                                                id="royale-rival-b-state" class="status-alive">Alive</span></div>
+                                    </div>
+                                    <div>
+                                        <div class="lane-label"><strong id="royale-rival-c-label">Rival C</strong><span
+                                                class="muted">Live</span></div>
+                                        <div class="runner-host" id="royale-rival-c"></div>
+                                        <div class="meta-row"><span>Score: <strong id="royale-rival-c-score">0</strong></span><span
+                                                id="royale-rival-c-state" class="status-alive">Alive</span></div>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <div class="lane-label"><strong id="royale-rival-b-label">Rival B</strong><span
-                                        class="muted">Live</span></div>
-                                <div class="runner-host" id="royale-rival-b"></div>
-                                <div class="meta-row"><span>Score: <strong id="royale-rival-b-score">0</strong></span><span
-                                        id="royale-rival-b-state" class="status-alive">Alive</span></div>
-                            </div>
                         </div>
-                        <!-- Bottom Mini Bar (Horizontal) -->
-                        <div class="mini-bar-bottom" id="royale-mini-bottom"></div>
+                        <div class="mini-row mini-row-top" id="royale-mini-row-top"></div>
+                        <div class="mini-row mini-row-bottom" id="royale-mini-row-bottom"></div>
                     </div>
-                    <!-- Right Mini Sidebar (Vertical) -->
-                    <div class="mini-sidebar right" id="royale-mini-right"></div>
+                    <div class="mini-rail" id="royale-mini-right"></div>
                 </div>
                 <div class="divider"></div>
                 <button id="royale-start" style="display: none;">Start Battle</button>

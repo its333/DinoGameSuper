@@ -564,12 +564,12 @@
             runnerMap: {},
             countingDown: false
         });
-        ['royale-mini-left', 'royale-mini-right', 'royale-mini-bottom'].forEach(id => {
+        ['royale-mini-left', 'royale-mini-right', 'royale-mini-row-top', 'royale-mini-row-bottom'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.innerHTML = '';
         });
-        ['royale-player-score', 'royale-rival-a-score', 'royale-rival-b-score'].forEach(id => setText(id, '0'));
-        ['royale-player-state', 'royale-rival-a-state', 'royale-rival-b-state'].forEach(id => {
+        ['royale-player-score', 'royale-rival-a-score', 'royale-rival-b-score', 'royale-rival-c-score'].forEach(id => setText(id, '0'));
+        ['royale-player-state', 'royale-rival-a-state', 'royale-rival-b-state', 'royale-rival-c-state'].forEach(id => {
             const el = document.getElementById(id);
             if (el) {
                 el.textContent = 'Alive';
@@ -640,6 +640,12 @@
         if (!player.id) {
             attachBotBrain(runner, skill);
         }
+        if (runner) {
+            runner.playerInfo = player;
+            runner.skill = skill;
+            runner.slot = 'mini';
+            runner.slotEl = slot;
+        }
         return runner;
     };
 
@@ -653,9 +659,10 @@
         // Fill rival slots with real players only
         if (others.length > 0) live.push(others[0]); // Rival A
         if (others.length > 1) live.push(others[1]); // Rival B
+        if (others.length > 2) live.push(others[2]); // Rival C
 
         // Fill minis with remaining real players (up to 13)
-        for (let i = 2; i < others.length && i < 15; i++) {
+        for (let i = 3; i < others.length && i < 16; i++) {
             minis.push(others[i]);
         }
 
@@ -685,21 +692,49 @@
         }, 1000);
     };
 
+    // Debug fill to visualize layout without server
+    const debugFillRoyale = () => {
+        tearDownRoyale();
+        const pName = document.getElementById('player-name').value.trim() || 'You';
+        const layout = document.getElementById('royale-game-layout');
+        const lobby = document.getElementById('royale-lobby');
+        const lobbyInput = document.getElementById('lobby-input');
+        const lobbyWaiting = document.getElementById('lobby-waiting');
+
+        const roster = [{ name: pName, isHost: true }];
+        royaleNames.slice(0, 12).forEach((n, idx) => roster.push({ name: `${n}-${idx + 1}` }));
+        royaleState.roster = roster;
+        royaleState.roomName = 'Debug Bots';
+        royaleState.playerName = pName;
+        if (layout) layout.style.display = 'grid';
+        if (lobby) lobby.style.display = 'none';
+        if (lobbyInput) lobbyInput.style.display = 'none';
+        if (lobbyWaiting) lobbyWaiting.style.display = 'none';
+        setText('royale-status', 'Debug: layout preview');
+        hydrateRoyale(Date.now(), true);
+    };
+
     const hydrateRoyale = (seed, warmup = false) => {
         const { live, minis } = pickNames(royaleState.playerName, royaleState.roster || []);
 
         setText('royale-player-label', live[0]?.name || 'You');
         if (live[1]) setText('royale-rival-a-label', live[1].name || 'Rival A');
         if (live[2]) setText('royale-rival-b-label', live[2].name || 'Rival B');
+        if (live[3]) setText('royale-rival-c-label', live[3].name || 'Rival C');
 
         // Destroy existing
+        royaleState.seed = seed;
         destroyRunner(royaleState.player);
         royaleState.rivals.forEach(destroyRunner);
         royaleState.minis.forEach(destroyRunner);
-        ['royale-mini-left', 'royale-mini-right', 'royale-mini-bottom'].forEach(id => {
+        ['royale-mini-left', 'royale-mini-right', 'royale-mini-row-top', 'royale-mini-row-bottom'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.innerHTML = '';
         });
+        const shell = document.getElementById('royale-game-layout');
+        if (shell) {
+            shell.classList.remove('no-rails', 'only-left', 'only-right');
+        }
         royaleState.runnerMap = {};
 
         // Player
@@ -743,41 +778,63 @@
         // Rivals
         const botControls = buildControls([], []);
 
-        const createRival = (player, hostId, scoreId, stateId, skill) => {
+        const rivalSlots = {
+            'rival-a': { hostId: 'royale-rival-a', scoreId: 'royale-rival-a-score', stateId: 'royale-rival-a-state', skill: 0.9 },
+            'rival-b': { hostId: 'royale-rival-b', scoreId: 'royale-rival-b-score', stateId: 'royale-rival-b-state', skill: 0.85 },
+            'rival-c': { hostId: 'royale-rival-c', scoreId: 'royale-rival-c-score', stateId: 'royale-rival-c-state', skill: 0.82 }
+        };
+
+        const createRivalRunner = (slotKey, player, meta, skill) => {
             if (!player) return null;
-            const runner = createRunner(hostId, {
+            const runner = createRunner(meta.hostId, {
                 name: player.name,
                 rngSeed: seed,
                 controls: botControls,
-                onScore: (score) => setText(scoreId, score),
+                onScore: (score) => setText(meta.scoreId, score),
                 onCrash: () => {
-                    setText(stateId, 'Down');
-                    const stateEl = document.getElementById(stateId);
+                    setText(meta.stateId, 'Down');
+                    const stateEl = document.getElementById(meta.stateId);
                     if (stateEl) stateEl.classList.add('status-dead');
+                    if (royaleState.promoteSlot) royaleState.promoteSlot(slotKey);
                 }
             });
+            runner.playerInfo = player;
+            runner.slot = slotKey;
+            runner.skill = skill;
             if (player.id) {
-                royaleState.runnerMap[player.id] = { runner, scoreId, stateId };
+                royaleState.runnerMap[player.id] = { runner, scoreId: meta.scoreId, stateId: meta.stateId, slot: slotKey };
             } else {
                 attachBotBrain(runner, skill);
             }
             return runner;
         };
 
-        const rivalA = createRival(live[1], 'royale-rival-a', 'royale-rival-a-score', 'royale-rival-a-state', 0.9);
-        const rivalB = createRival(live[2], 'royale-rival-b', 'royale-rival-b-score', 'royale-rival-b-state', 0.85);
+        const rivalA = createRivalRunner('rival-a', live[1], rivalSlots['rival-a'], rivalSlots['rival-a'].skill);
+        const rivalB = createRivalRunner('rival-b', live[2], rivalSlots['rival-b'], rivalSlots['rival-b'].skill);
+        const rivalC = createRivalRunner('rival-c', live[3], rivalSlots['rival-c'], rivalSlots['rival-c'].skill);
 
-        royaleState.rivals = [rivalA, rivalB].filter(r => r);
+        royaleState.rivals = [rivalA, rivalB, rivalC].filter(r => r);
 
         // Minis
         royaleState.minis = [];
+        let leftCount = 0;
+        let rightCount = 0;
+        let topCount = 0;
+        let bottomCount = 0;
+
         minis.forEach((player, i) => {
-            let targetGrid = 'royale-mini-left';
-            if (i >= 5 && i < 10) targetGrid = 'royale-mini-right';
-            if (i >= 10) targetGrid = 'royale-mini-bottom';
+            let targetGrid = 'royale-mini-left'; // 0-2 left rail
+            if (i >= 3 && i < 6) targetGrid = 'royale-mini-right'; // 3-5 right rail
+            if (i >= 6 && i < 9) targetGrid = 'royale-mini-row-top'; // 6-8 first bottom row
+            if (i >= 9 && i < 13) targetGrid = 'royale-mini-row-bottom'; // 9-12 second bottom row
+            if (i >= 13) targetGrid = 'royale-mini-row-bottom';
             const runner = createMiniRunner(player, 0.72 + i * 0.03, botControls, i, seed, targetGrid);
             if (runner) {
                 royaleState.minis.push(runner);
+                if (targetGrid === 'royale-mini-left') leftCount++;
+                if (targetGrid === 'royale-mini-right') rightCount++;
+                if (targetGrid === 'royale-mini-row-top') topCount++;
+                if (targetGrid === 'royale-mini-row-bottom') bottomCount++;
                 if (player.id) {
                     royaleState.runnerMap[player.id] = {
                         runner,
@@ -787,6 +844,26 @@
                 }
             }
         });
+
+        // Fill placeholders to preserve layout when under-populated
+        const appendPlaceholder = (gridId, count, max) => {
+            const grid = document.getElementById(gridId);
+            if (!grid) return;
+            for (let i = count; i < max; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'mini-tile placeholder';
+                slot.innerHTML = `<div class="lane-label"><strong>Waiting...</strong><span class="muted">Mini</span></div>
+                                  <div class="runner-host mini-runner"></div>
+                                  <div class="meta-row"><span>Score: <strong>0</strong></span><span class="status-alive">Ready</span></div>`;
+                grid.appendChild(slot);
+            }
+        };
+        appendPlaceholder('royale-mini-left', leftCount, 3);
+        appendPlaceholder('royale-mini-right', rightCount, 3);
+        appendPlaceholder('royale-mini-row-top', topCount, 3);
+        appendPlaceholder('royale-mini-row-bottom', bottomCount, 4);
+
+        // Keep shell width consistent regardless of rail fill state; no layout collapsing here.
 
         // Start or warmup
         const allRunners = [royaleState.player, ...royaleState.rivals, ...royaleState.minis].filter(r => r);
@@ -872,7 +949,7 @@
         if (quick) {
             if (lobby) lobby.style.display = 'none';
             if (lobbyWaiting) lobbyWaiting.style.display = 'none';
-            if (layout) layout.style.display = 'flex';
+            if (layout) layout.style.display = 'grid';
             setText('royale-status', 'Searching for players...');
 
             royaleState.player = createRunner('royale-player', {
@@ -938,7 +1015,7 @@
             setText('royale-status', 'Game Started!');
             if (lobby) lobby.style.display = 'none';
             if (lobbyWaiting) lobbyWaiting.style.display = 'none';
-            if (layout) layout.style.display = 'flex';
+            if (layout) layout.style.display = 'grid';
             if (startBtn) startBtn.style.display = 'none';
             hydrateRoyale(seed);
         }, (id, state) => {
@@ -951,6 +1028,9 @@
                         target.runner.tRex.startCrash();
                         setText(target.stateId, 'Down');
                         document.getElementById(target.stateId)?.classList.add('status-dead');
+                        if (target.slot && target.slot.startsWith('rival') && royaleState.promoteSlot) {
+                            royaleState.promoteSlot(target.slot);
+                        }
                     }
                 } else {
                     // Update score
@@ -1051,9 +1131,7 @@
         document.getElementById('royale-leave-btn')?.addEventListener('click', () => {
             tearDownRoyale();
         });
-        document.getElementById('debug-fill')?.addEventListener('click', () => {
-            console.log('Debug: Fill with bots');
-        });
+        document.getElementById('debug-fill')?.addEventListener('click', debugFillRoyale);
         document.getElementById('royale-next')?.addEventListener('click', () => joinRoyale({ quick: true }));
         document.getElementById('royale-return')?.addEventListener('click', () => tearDownRoyale());
     };
