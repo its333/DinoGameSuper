@@ -555,6 +555,10 @@
             royaleState.matchmaker.destroy();
             royaleState.matchmaker = null;
         }
+        if (royaleState.heartbeatId) {
+            clearInterval(royaleState.heartbeatId);
+            royaleState.heartbeatId = null;
+        }
         destroyRunner(royaleState.player);
         royaleState.rivals.forEach(destroyRunner);
         royaleState.minis.forEach(destroyRunner);
@@ -565,7 +569,9 @@
             alive: 0,
             roster: [],
             runnerMap: {},
-            countingDown: false
+            countingDown: false,
+            gameStarted: false,
+            heartbeatId: null
         });
         ['royale-mini-left', 'royale-mini-right', 'royale-mini-row-top', 'royale-mini-row-bottom'].forEach(id => {
             const el = document.getElementById(id);
@@ -896,6 +902,10 @@
     const handleRoyaleGameOver = () => {
         // Find survivor or highest scorer
         const allRunners = [royaleState.player, ...royaleState.rivals, ...royaleState.minis].filter(r => r);
+        if (allRunners.length < 2) {
+            setText('royale-status', 'Game Over');
+            return;
+        }
         const survivor = allRunners.find(r => !r.crashed);
 
         let winnerRunner = null;
@@ -1015,6 +1025,14 @@
                 setText('lobby-status-text', isHost ? 'You are host - start when ready.' : 'Waiting for host to start...');
                 if (startBtn) startBtn.style.display = isHost && roster.length >= 2 ? 'inline-block' : 'none';
                 setText('royale-status', `Lobby: ${roster.length} players`);
+                // Render preview behind overlay so players can see who is here
+                if (layout) layout.style.display = 'grid';
+                if (!royaleState.gameStarted) {
+                    const previewSeed = royaleState.seed || (roster.reduce((acc, p) => acc + (p.id ? p.id.length : 1), 0) + roster.length);
+                    // Use warmup to avoid auto-starting the local runner during lobby
+                    hydrateRoyale(previewSeed, true, true);
+                    startHeartbeat();
+                }
             } else {
                 // Server handles countdown for Quick Play
                 if (countdownInterval) {
@@ -1029,9 +1047,39 @@
                     setText('royale-status', 'Waiting for players...');
                 }
 
-                // Render preview with placeholders
-                hydrateRoyale(0, true, true);
+                // Render preview with placeholders so others are visible
+                if (layout) layout.style.display = 'grid';
+                if (!royaleState.gameStarted) {
+                    const previewSeed = royaleState.seed || (roster.reduce((acc, p) => acc + (p.id ? p.id.length : 1), 0) + roster.length);
+                    // Use warmup to avoid auto-starting the local runner during lobby
+                    hydrateRoyale(previewSeed, true, true);
+                    startHeartbeat();
+                }
             }
+        };
+
+        const startHeartbeat = () => {
+            if (royaleState.heartbeatId) clearInterval(royaleState.heartbeatId);
+            const send = () => {
+                if (!royaleState.matchmaker) return;
+                const r = royaleState.player;
+                const payload = r ? {
+                    score: Math.floor(r.distanceRan || 0),
+                    crashed: !!r.crashed,
+                    jumping: !!(r.tRex && r.tRex.jumping),
+                    ducking: !!(r.tRex && r.tRex.ducking),
+                    name: royaleState.playerName
+                } : {
+                    score: 0,
+                    crashed: false,
+                    jumping: false,
+                    ducking: false,
+                    name: royaleState.playerName
+                };
+                royaleState.matchmaker.sendUpdate(payload);
+            };
+            send();
+            royaleState.heartbeatId = setInterval(send, 250);
         };
 
         const matchmaker = new Matchmaker(updateRoster, (seed) => {
@@ -1040,48 +1088,111 @@
                 countdownInterval = null;
                 royaleState.countingDown = false;
             }
+            royaleState.gameStarted = true;
             setText('royale-status', 'Game Started!');
             if (lobby) lobby.style.display = 'none';
             if (lobbyWaiting) lobbyWaiting.style.display = 'none';
             if (layout) layout.style.display = 'grid';
             if (startBtn) startBtn.style.display = 'none';
             hydrateRoyale(seed, false, false);
+            startHeartbeat();
         }, (id, state) => {
-            // Handle rival update
-            const target = royaleState.runnerMap[id];
-            if (target && target.runner) {
-                if (state.crashed) {
-                    if (!target.runner.crashed) {
-                        target.runner.crashed = true; // Visual only
-                        target.runner.tRex.startCrash();
-                        setText(target.stateId, 'Down');
-                        document.getElementById(target.stateId)?.classList.add('status-dead');
-                        if (target.slot && target.slot.startsWith('rival') && royaleState.promoteSlot) {
-                            royaleState.promoteSlot(target.slot);
-                        }
+            // Handle rival update; create runner if missing
+            const getContainerByIndex = (idx) => {
+                if (idx >= 0 && idx < 3) return document.getElementById('royale-mini-left');
+                if (idx >= 3 && idx < 6) return document.getElementById('royale-mini-right');
+                if (idx >= 6 && idx < 9) return document.getElementById('royale-mini-row-top');
+                return document.getElementById('royale-mini-row-bottom');
+            };
+            const ensureRival = (playerId, playerState) => {
+                if (royaleState.runnerMap[playerId]) return royaleState.runnerMap[playerId];
+                const rosterIdx = (royaleState.roster || []).findIndex(p => p.id === playerId);
+                const idx = rosterIdx >= 0 ? rosterIdx : Object.keys(royaleState.runnerMap).length;
+                const hostId = `mini-${idx}`;
+                // If tile exists, reuse it; else create
+                let runnerHost = document.getElementById(hostId);
+                if (!runnerHost) {
+                    const slot = document.createElement('div');
+                    slot.className = 'mini-tile';
+                    slot.innerHTML = `<div class="lane-label"><strong>${playerState?.name || 'Waiting...'}</strong><span class="muted">Mini</span></div>
+                                      <div class="runner-host mini-runner" id="${hostId}"></div>
+                                      <div class="meta-row"><span>Score: <strong id="${hostId}-score">0</strong></span><span id="${hostId}-state" class="status-alive">Alive</span></div>`;
+                    const grid = getContainerByIndex(idx);
+                    if (grid) grid.appendChild(slot);
+                }
+                const runner = createRunner(hostId, {
+                    name: playerState?.name || playerId,
+                    rngSeed: royaleState.seed || Date.now(),
+                    controls: buildControls([], [])
+                });
+                if (runner) {
+                    runner.stopListening();
+                    // Leave runner idle for real players in lobby; no bot brain here.
+                }
+                const entry = { runner, scoreId: `${hostId}-score`, stateId: `${hostId}-state`, slot: hostId };
+                royaleState.runnerMap[playerId] = entry;
+                return entry;
+            };
+
+            const target = ensureRival(id, state);
+            if (!target || !target.runner) return;
+
+            if (state.crashed) {
+                if (!target.runner.crashed) {
+                    target.runner.crashed = true; // Visual only
+                    if (target.runner.gameOver) {
+                        target.runner.gameOver();
+                    } else if (target.runner.tRex && target.runner.tRex.update) {
+                        target.runner.tRex.update(0, 'CRASHED');
                     }
-                } else {
-                    // Update score
-                    if (state.score !== undefined) {
-                        setText(target.scoreId, state.score);
-                        if (target.runner) {
-                            target.runner.distanceRan = state.score; // CRITICAL: Update distance for winner detection
-                        }
+                    setText(target.stateId, 'Down');
+                    document.getElementById(target.stateId)?.classList.add('status-dead');
+                    if (target.slot && target.slot.startsWith('rival') && royaleState.promoteSlot) {
+                        royaleState.promoteSlot(target.slot);
+                    }
+                }
+            } else {
+                // If we had marked them crashed, revive visuals
+                if (target.runner && target.runner.crashed) {
+                    target.runner.crashed = false;
+                    const stateEl = document.getElementById(target.stateId);
+                    if (stateEl) {
+                        stateEl.textContent = 'Alive';
+                        stateEl.classList.remove('status-dead');
+                        stateEl.classList.add('status-alive');
+                    }
+                }
+                // Update score
+                if (state.score !== undefined) {
+                    setText(target.scoreId, state.score);
+                    if (target.runner) {
+                        target.runner.distanceRan = state.score;
+                    }
+                }
+
+                // Apply action states for visual feedback
+                if (target.runner && target.runner.tRex) {
+                    // Apply jumping state
+                    if (state.jumping && !target.runner.tRex.jumping) {
+                        target.runner.tRex.startJump(target.runner.currentSpeed);
                     }
 
-                    // Apply action states for visual feedback
-                    if (target.runner && target.runner.tRex) {
-                        // Apply jumping state
-                        if (state.jumping && !target.runner.tRex.jumping) {
-                            target.runner.tRex.startJump(target.runner.currentSpeed);
-                        }
-
-                        // Apply ducking state
-                        if (state.ducking && !target.runner.tRex.ducking) {
-                            target.runner.tRex.setDuck(true);
-                        } else if (!state.ducking && target.runner.tRex.ducking) {
-                            target.runner.tRex.setDuck(false);
-                        }
+                    // Apply ducking state
+                    if (state.ducking && !target.runner.tRex.ducking) {
+                        target.runner.tRex.setDuck(true);
+                    } else if (!state.ducking && target.runner.tRex.ducking) {
+                        target.runner.tRex.setDuck(false);
+                    }
+                } else if (!target.runner) {
+                        const tempRunner = createRunner(target.slot || `mini-${id}`, {
+                            name: state.name || id,
+                            rngSeed: royaleState.seed || Date.now(),
+                            controls: buildControls([], [])
+                        });
+                    if (tempRunner) {
+                        tempRunner.stopListening();
+                        target.runner = tempRunner;
+                        attachBotBrain(tempRunner, 0.8);
                     }
                 }
             }
